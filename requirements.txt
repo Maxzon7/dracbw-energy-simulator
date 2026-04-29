@@ -2,3 +2,5 @@ streamlit
 pandas
 plotly
 numpy
+weasyprint
+kaleido
