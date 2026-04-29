@@ -204,7 +204,7 @@ def main():
                             # Import from the new functions folder
                             from functions.pdf_converter import generate_tech_pdf
                             
-                            pdf_data = generate_tech_pdf(report_name, pdf_metrics, fig_load, fig_soc)
+                            pdf_data = generate_tech_pdf(report_name, pdf_metrics)
                             
                             st.download_button(
                                 label="📥 Download Technical PDF",
