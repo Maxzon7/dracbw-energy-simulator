@@ -105,6 +105,11 @@ def main():
     st.sidebar.header(t["header_data"])
     uploaded_file = st.sidebar.file_uploader("Upload CSV", type=['csv'])
     
+    if uploaded_file:
+        # Generate default report name based on the uploaded file
+        default_name = uploaded_file.name.rsplit('.', 1)[0]
+        report_name = st.sidebar.text_input("Report Title", value=f"Report_{default_name}")
+    
     st.sidebar.header(t["header_grid"])
     grid_limit = st.sidebar.number_input(t["grid_limit"], value=50.0, step=5.0)
     res = st.sidebar.selectbox(t["resolution"], [1, 5, 15, 60], index=2)
@@ -144,6 +149,9 @@ def main():
                 m2.metric(t["metric_min_pwr"], f"{min_reqs['min_power_kw']:.1f} kW")
                 m3.metric(t["metric_min_cap"], f"{min_reqs['true_min_capacity_kwh']:.1f} kWh")
 
+                # Define fig_soc early so it exists even if battery is disabled
+                fig_soc = None 
+
                 if show_battery:
                     results = simulate_battery_logic(filtered, grid_limit, b_cap, b_pwr, res)
                     
@@ -174,11 +182,39 @@ def main():
                         st.plotly_chart(fig_soc, use_container_width=True)
                 else:
                     st.warning(t["no_bat_warn"])
-                    fig = go.Figure()
-                    fig.add_trace(go.Scatter(x=filtered['timestamp'], y=filtered['consumption_kw'], line=dict(color=col_raw)))
-                    fig.add_hline(y=grid_limit, line_dash="dash", line_color="red")
-                    st.plotly_chart(fig, use_container_width=True)
-                    
+                    fig_load = go.Figure()
+                    fig_load.add_trace(go.Scatter(x=filtered['timestamp'], y=filtered['consumption_kw'], line=dict(color=col_raw)))
+                    fig_load.add_hline(y=grid_limit, line_dash="dash", line_color="red")
+                    st.plotly_chart(fig_load, use_container_width=True)
+
+                # --- EXPORT SECTION ---
+                st.divider()
+                st.subheader("Export Results")
+    
+                pdf_metrics = {
+                    "grid_limit": grid_limit,
+                    "peak_raw": filtered['consumption_kw'].max(),
+                    "min_pwr": min_reqs['min_power_kw'],
+                    "min_cap": min_reqs['true_min_capacity_kwh']
+                }
+
+                if st.button("Generate PDF Report"):
+                    with st.spinner("Creating PDF..."):
+                        try:
+                            # Import from the new functions folder
+                            from functions.pdf_converter import generate_tech_pdf
+                            
+                            pdf_data = generate_tech_pdf(report_name, pdf_metrics, fig_load, fig_soc)
+                            
+                            st.download_button(
+                                label="📥 Download Technical PDF",
+                                data=pdf_data,
+                                file_name=f"{report_name}.pdf",
+                                mime="application/pdf"
+                            )
+                        except Exception as pdf_error:
+                            st.error(f"Error during PDF generation: {pdf_error}")
+
         except Exception as e:
             st.error(f"Error: {e}")
 
