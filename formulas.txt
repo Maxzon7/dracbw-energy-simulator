@@ -1,0 +1,129 @@
+Energy Simulation Formulas & Logic Reference
+
+This document serves as the mathematical foundation for the DRACBV Green Energy Simulator. All formulas are defined for implementation in Python.
+
+1. Core Energy & Power
+
+Fundamental conversion between power (instantaneous) and energy (over time).
+
+Formula 1.1: Power to Energy (per Interval)
+
+Mathematical Formula:
+
+$$E_{interval} = P_{avg} \times \Delta t$$
+
+Plain Text Logic:
+The consumed energy (kWh) is the average power (kW) multiplied by the fraction of an hour. If we measure in 15-minute intervals, we divide the power by 4 (since 15 min = 0.25 h).
+
+Formula 1.2: Grid Delta (The "Gap")
+
+Mathematical Formula:
+
+$$P_{diff} = P_{consumption} - P_{grid\_limit}$$
+
+Plain Text Logic:
+We calculate the bottleneck. If the current consumption is higher than what the grid provides ($P_{diff} > 0$), we have a load peak that must be covered by a battery or generator. If the value is negative, we have spare capacity to charge the battery.
+
+2. Solar Photovoltaic (PV) Simulation
+
+Based on Chapter 7.3 of the assignment.
+
+Formula 2.1: Standard Yield Calculation
+
+Mathematical Formula:
+
+$$P_{pv} = P_{installed\_kWp} \times \eta_{system} \times f_{orientation} \times f_{shading}$$
+
+Plain Text Logic:
+The actual solar yield is calculated from the installed peak power (kWp), minus system losses (efficiency) and factors for orientation (South vs. West) and shading.
+
+Formula 2.2: Temperature Degradation
+
+Mathematical Formula:
+
+$$f_{temp} = 1 - \max(0, (T_{cell} - 25) \times 0.0025)$$
+
+Plain Text Logic:
+Solar cells lose efficiency when they get hot. We use 25°C as the baseline. For every degree above this, the output automatically drops by 0.25%. If it is colder than 25°C, there is no deduction.
+
+Formula 2.3: Age Degradation
+
+Mathematical Formula:
+
+$$P_{year\_n} = P_{initial} \times (1 - d_{annual})^n$$
+
+Plain Text Logic:
+Hardware ages. Every year, the maximum yield decreases by a small percentage (usually around 0.5% to 0.8%). After 10 years, the panels produce noticeably less power than on day one.
+
+3. Battery Energy Storage System (BESS)
+
+Core logic for the simulation loop.
+
+Formula 3.1: State of Charge (SoC) Update
+
+Mathematical Formula:
+
+$$SoC_{t+1} = SoC_t + (P_{action} \times \Delta t \times \eta_{roundtrip})$$
+
+Plain Text Logic:
+The new state of charge is the old state of charge plus/minus the energy we just pushed in or pulled out, adjusted for charging losses (roundtrip efficiency).
+
+Formula 3.2: Discharge & Charge Limits
+
+Mathematical Formula:
+
+$$P_{limit} = \min(P_{rated}, \text{Available Energy/Space in Interval})$$
+
+Plain Text Logic:
+We cannot discharge more power than the battery physically allows (power rating), nor more than what is currently left in the storage. The same applies to charging: If the battery is almost full, we throttle the charging power.
+
+4. Economic & Financial KPIs
+
+The "Money" part requested in Chapter 8.3.
+
+Formula 4.1: CAPEX (Capital Expenditure)
+
+Mathematical Formula:
+
+$$CAPEX_{total} = \sum (\text{Investments})$$
+
+Plain Text Logic:
+The sum of all initial costs: solar panels + batteries + new grid connections + installation. This is the upfront capital the client has to provide.
+
+Formula 4.2: OPEX (Operational Expenditure)
+
+Mathematical Formula:
+
+$$OPEX_{annual} = \sum (\text{Recurring Costs})$$
+
+Plain Text Logic:
+The ongoing yearly costs: maintenance, insurance, and fixed base fees for the grid connection.
+
+Formula 4.3: Simple Payback Period
+
+Mathematical Formula:
+
+$$Payback = \frac{CAPEX_{total}}{\text{Annual Savings} - OPEX_{annual}}$$
+
+Plain Text Logic:
+The return on investment time. How many years does it take until the savings (buying less power from the grid) have paid back the initial investment costs?
+
+Formula 4.4: Net Present Value (NPV)
+
+Mathematical Formula:
+
+$$NPV = \sum_{t=0}^{N} \frac{R_t}{(1 + i)^t}$$
+
+Plain Text Logic:
+Since money loses value over time (due to inflation/interest), we discount all future net cash flows back to their present value. If the NPV is positive after the project lifetime, the investment is financially profitable.
+
+5. Grid Specifics
+
+Formula 5.1: Peak Shaving Savings
+
+Mathematical Formula:
+
+$$Savings_{peak} = (P_{peak\_old} - P_{peak\_new}) \times \text{Tariff}_{kW}$$
+
+Plain Text Logic:
+Many companies pay a capacity fee based on their highest power peak in a month. If we reduce this peak from 100 kW to 50 kW using the battery, we save the penalty fee for the difference (50 kW).
