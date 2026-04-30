@@ -119,7 +119,7 @@ def main():
                     "min_cap": min_reqs['true_min_capacity_kwh']
                 }
 
-                if st.button(t["pdf_button"]): 
+                if st.button(t.get("pdf_button", "Generate PDF Report")): 
                     with st.spinner("Creating PDF..."):
                         try:
                             from functions.pdf_converter import generate_tech_pdf
@@ -135,7 +135,7 @@ def main():
                             )
                             
                             st.download_button(
-                                label=t["pdf_download"], 
+                                label=t.get("pdf_download", "Download Technical PDF"), 
                                 data=pdf_data,
                                 file_name=f"{report_name}.pdf",
                                 mime="application/pdf"
