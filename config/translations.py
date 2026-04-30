@@ -36,7 +36,7 @@ CONTENT = {
         "chart_load": "System Load Profile",
         "chart_act": "Battery Action (kW)",
         "chart_soc": "State of Charge (SoC in kWh)",
-        "no_bat_warn": "Battery simulation disabled. Showing raw data only."
+        "no_bat_warn": "Battery simulation disabled. Showing raw data only.",
         "pdf_button": "Generate PDF Report",
         "pdf_download": "Download Technical PDF"
     },
