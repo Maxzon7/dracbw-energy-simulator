@@ -37,6 +37,8 @@ CONTENT = {
         "chart_act": "Battery Action (kW)",
         "chart_soc": "State of Charge (SoC in kWh)",
         "no_bat_warn": "Battery simulation disabled. Showing raw data only."
+        "pdf_button": "Generate PDF Report",
+        "pdf_download": "Download Technical PDF"
     },
     "de": {
         "title": "Smart Energy und Peak Shaving Simulator",
@@ -60,6 +62,8 @@ CONTENT = {
         "chart_load": "Systemlast-Profil",
         "chart_act": "Batterie-Aktion (kW)",
         "chart_soc": "Ladestand (SoC in kWh)",
+        "pdf_button": "PDF Bericht generieren",
+        "pdf_download": "Technisches PDF herunterladen",
         "no_bat_warn": "Batterie-Simulation deaktiviert. Zeige nur Rohdaten."
     },
     "nl": {
@@ -84,6 +88,8 @@ CONTENT = {
         "chart_load": "Systeembelastingprofiel",
         "chart_act": "Batterij-actie (kW)",
         "chart_soc": "Laadstatus (SoC in kWh)",
+        "pdf_button": "Genereer PDF Rapport",
+        "pdf_download": "Download Technisch PDF",
         "no_bat_warn": "Batterijsimulatie uitgeschakeld. Alleen ruwe gegevens worden getoond."
     }
 }
