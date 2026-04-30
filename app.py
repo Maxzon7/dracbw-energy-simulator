@@ -119,6 +119,31 @@ def main():
                     "min_cap": min_reqs['true_min_capacity_kwh']
                 }
 
+                if st.button(t["pdf_button"]): # Benutzt jetzt deine translations.py!
+                    with st.spinner("Creating PDF..."):
+                        try:
+                            from functions.pdf_converter import generate_tech_pdf
+                            
+                            # Determine which data to send based on battery toggle
+                            export_data = results if show_battery else filtered
+                            
+                            pdf_data = generate_tech_pdf(
+                                report_title=report_name, 
+                                metrics=pdf_metrics, 
+                                plot_data=export_data, 
+                                battery_enabled=show_battery
+                            )
+                            
+                            st.download_button(
+                                label=t["pdf_download"], # Benutzt jetzt deine translations.py!
+                                data=pdf_data,
+                                file_name=f"{report_name}.pdf",
+                                mime="application/pdf"
+                            )
+                        except Exception as pdf_error:
+                            st.error(f"Error during PDF generation: {pdf_error}")
+                
+                """
                 if st.button("Generate PDF Report"):
                     with st.spinner("Creating PDF..."):
                         try:
@@ -135,6 +160,7 @@ def main():
                             )
                         except Exception as pdf_error:
                             st.error(f"Error during PDF generation: {pdf_error}")
+                """
 
         except Exception as e:
             st.error(f"Error: {e}")
