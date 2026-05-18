@@ -2,19 +2,19 @@ import streamlit as st
 import plotly.graph_objects as go
 from logic.energy_logic import simulate_battery_logic, get_exact_minimum_requirements
 
-def render_tab2_scenarios(t: dict):
+def render_tab2_scenarios():
     """
-    Renders the Scenarios tab. Applies battery simulations to the baseline data 
-    stored in the session state and allows PDF export.
+    Renders the Scenario evaluation module. Simulates hardware interactions 
+    against the verified baseline data set from session state.
     """
-    st.header(t.get("tab_scenarios", "2. Battery Scenarios"))
+    t = st.session_state['t']
+    st.header(t["tab_scenarios"])
     
-    # Check if baseline data exists on our "notepad" (session state)
+    # Abort execution context if required baseline context is missing
     if 'filtered_data' not in st.session_state or st.session_state['filtered_data'] is None:
-        st.warning(t.get("no_data_warn", "Please upload and process data in the Baseline tab first."))
+        st.warning(t["no_data_warn"])
         return
         
-    # Retrieve data and settings from session state
     filtered_data = st.session_state['filtered_data']
     grid_limit = st.session_state['grid_limit']
     res = st.session_state['resolution']
@@ -34,7 +34,6 @@ def render_tab2_scenarios(t: dict):
         col_soc = st.color_picker("SoC Color", "#636EFA")
         col_act = st.color_picker("Battery Action Color", "#FFA15A")
         
-        # Calculate Hardware Requirements
         min_reqs = get_exact_minimum_requirements(filtered_data, grid_limit, res)
         st.divider()
         st.markdown(f"**{t['metrics_title']}**")
@@ -47,10 +46,8 @@ def render_tab2_scenarios(t: dict):
             st.warning(t["no_bat_warn"])
             return
 
-        # Run Battery Simulation
         results = simulate_battery_logic(filtered_data, grid_limit, b_cap, b_pwr, res)
         
-        # Main Load Chart
         st.subheader(t["chart_load"])
         fig_load = go.Figure()
         fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['consumption_kw'], 
@@ -61,7 +58,6 @@ def render_tab2_scenarios(t: dict):
         fig_load.update_layout(height=350, yaxis_title="kW", margin=dict(t=10, b=10))
         st.plotly_chart(fig_load, use_container_width=True)
 
-        # Bottom Charts (Action and SoC)
         c_left, c_right = st.columns(2)
         with c_left:
             st.subheader(t["chart_act"])
@@ -78,33 +74,31 @@ def render_tab2_scenarios(t: dict):
             fig_soc.update_layout(height=250, yaxis_title="kWh", margin=dict(t=10, b=10))
             st.plotly_chart(fig_soc, use_container_width=True)
             
-        # --- PDF EXPORT ---
+        # --- PDF DOCUMENT EXPORT ---
         st.divider()
         st.subheader("Export Results")
         
-        pdf_metrics = {
-            "grid_limit": grid_limit,
-            "peak_raw": filtered_data['consumption_kw'].max(),
-            "min_pwr": min_reqs['min_power_kw'],
-            "min_cap": min_reqs['true_min_capacity_kwh']
-        }
-        
-        if st.button(t.get("pdf_button", "Generate PDF Report")): 
-            with st.spinner("Creating PDF..."):
+        if st.button(t["pdf_button"]): 
+            with st.spinner("Compiling technical evaluation..."):
                 try:
                     from functions.pdf_converter import generate_tech_pdf
+                    pdf_metrics = {
+                        "grid_limit": grid_limit,
+                        "peak_raw": filtered_data['consumption_kw'].max(),
+                        "min_pwr": min_reqs['min_power_kw'],
+                        "min_cap": min_reqs['true_min_capacity_kwh']
+                    }
                     pdf_data = generate_tech_pdf(
                         report_title=report_name, 
                         metrics=pdf_metrics, 
                         plot_data=results, 
                         battery_enabled=True
                     )
-                    
                     st.download_button(
-                        label=t.get("pdf_download", "Download Technical PDF"), 
+                        label=t["pdf_download"], 
                         data=pdf_data,
                         file_name=f"{report_name}.pdf",
                         mime="application/pdf"
                     )
                 except Exception as pdf_error:
-                    st.error(f"Error during PDF generation: {pdf_error}")
+                    st.error(f"Error during document compilation: {pdf_error}")

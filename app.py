@@ -1,49 +1,61 @@
-
-
-
 import streamlit as st
-from config.translations import LANGUAGES, CONTENT
+import json
+import os
 
-# Import the logic for the different tabs
+# Import the UI modules for each tab
 from tabs.tab1_baseline import render_tab1_baseline
 from tabs.tab2_scenarios import render_tab2_scenarios
 from tabs.tab3_comparison import render_tab3_comparison
 
+def load_translations() -> dict:
+    """
+    Loads translation bundles from a external JSON file to decouple data from logic.
+    """
+    json_path = os.path.join("config", "translations.json")
+    with open(json_path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
 def main():
-    # MUST BE THE FIRST COMMAND
+    # Application configuration must be execution command number one
     st.set_page_config(page_title="Pro Energy Simulator", layout="wide")
 
-    # --- TRANSLATION SYSTEM ---
+    # Initialize translation data store within session state
+    if 'translations' not in st.session_state:
+        st.session_state['translations'] = load_translations()
+
+    # --- LANGUAGE SELECTION ---
     st.sidebar.title("⚙️ Settings")
-    sel_lang = st.sidebar.selectbox("Language / Sprache", list(LANGUAGES.keys()), index=0)
-    lang = LANGUAGES[sel_lang]
+    languages = {"English 🇬🇧": "en", "Deutsch 🇩🇪": "de"}
+    sel_lang = st.sidebar.selectbox("Language / Sprache", list(languages.keys()), index=0)
+    lang_code = languages[sel_lang]
     
-    # Secure fallback to English
-    t = CONTENT.get(lang, CONTENT["en"])
+    # Store the active language layer globally for all components
+    st.session_state['t'] = st.session_state['translations'].get(lang_code, st.session_state['translations']["en"])
+    t = st.session_state['t']
     
-    # Header Area
+    # Header display elements
     st.title(t["title"])
     st.error(t["warning"])
     
-    with st.expander(t.get("info_title", "Technical Documentation")):
-        st.write(t.get("info_text", "Documentation text here..."))
+    with st.expander(t["info_title"]):
+        st.write(t["info_text"])
 
     # --- TAB NAVIGATION ---
     tab1, tab2, tab3 = st.tabs([
-        t.get("tab_baseline", "1. Baseline"), 
-        t.get("tab_scenarios", "2. Scenarios"), 
-        t.get("tab_comparison", "3. Comparison")
+        t["tab_baseline"], 
+        t["tab_scenarios"], 
+        t["tab_comparison"]
     ])
     
-    # Render the contents of each tab and pass the translation dictionary
+    # Route execution to tabs without explicitly passing translation dictionaries
     with tab1:
-        render_tab1_baseline(t)
+        render_tab1_baseline()
         
     with tab2:
-        render_tab2_scenarios(t)
+        render_tab2_scenarios()
         
     with tab3:
-        render_tab3_comparison(t)
+        render_tab3_comparison()
 
 if __name__ == "__main__":
     main()
