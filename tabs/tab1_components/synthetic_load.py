@@ -6,10 +6,13 @@ def synthetic_load(monthly_consumption: float,
                    hours_per_day: int, 
                    base_load_pct: int = 15,
                    year: int = 2026,
-                   month: int = 1) -> pd.DataFrame:
+                   month: int = 1,
+                   noise_enabled: bool = False,
+                   noise_percentage: float = 5.0) -> pd.DataFrame:
     """
     Generates a 15-minute load profile based on monthly consumption,
     working days, and working hours for a SINGLE MONTH.
+    Features optional user-controlled Gaussian fluctuations.
     """
     # Start and End Date for the specific month
     start_date = f'{year}-{month:02d}-01'
@@ -46,12 +49,17 @@ def synthetic_load(monthly_consumption: float,
     active_mask = op_mask & working_days_mask
     profile[active_mask] = 1.0
     
-    # Add some realistic noise (+/- 5%)
-    noise = np.random.normal(1.0, 0.05, len(profile))
-    profile = profile * noise
+    # --- BEDINGTE SCHWANKUNGEN (NOISE) ---
+    if noise_enabled:
+        # Wandelt Prozentwert (z.B. 5%) in die mathematische Standardabweichung (0.05) um
+        std_dev = noise_percentage / 100.0
+        noise = np.random.normal(1.0, std_dev, len(profile))
+        profile = profile * noise
+    
+    # Untergrenze absichern, damit Lasten nicht negativ werden
     profile = np.clip(profile, a_min=base_factor * 0.5, a_max=None)
     
-    # Normalize to TARGET MONTHLY CONSUMPTION
+    # Auf Ziel-Verbrauch normieren (Leistung / 4 = Energie für 15-Min-Intervalle)
     current_monthly_energy = np.sum(profile) / 4.0
     scaling_factor = monthly_consumption / current_monthly_energy
     
