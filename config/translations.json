@@ -27,7 +27,19 @@
     "no_data_warn": "Please upload and process data in the Baseline tab first.",
     "no_bat_warn": "Battery simulation disabled. Showing raw data only.",
     "pdf_button": "Generate PDF Report",
-    "pdf_download": "Download Technical PDF"
+    "pdf_download": "Download Technical PDF",
+    "data_source": "Data Source",
+    "csv_upload": "CSV Upload",
+    "manual_input": "Manual Input",
+    "grid_connections": "Grid Connections (Qty)",
+    "amperage": "Amperage per Connection (A)",
+    "max_grid_capacity": "Calculated Max Grid Capacity",
+    "base_load": "Base Load (kW)",
+    "peaks": "Load Peaks",
+    "add_peak": "Add Peak",
+    "peak_power": "Power (kW)",
+    "peak_duration": "Duration (hrs)",
+    "generate_profile": "Generate Synthetic Profile"
   },
   "de": {
     "title": "Smart Energy und Peak Shaving Simulator",
