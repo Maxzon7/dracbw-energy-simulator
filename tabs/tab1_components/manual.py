@@ -1,6 +1,7 @@
 # tabs/tab1_components/manual.py
 import streamlit as st
 from tabs.tab1_components.synthetic_load import synthetic_load
+from data_models.scenarios import BaselineScenario
 
 def render_manual_profile_generator():
     """
@@ -78,44 +79,44 @@ def render_manual_profile_generator():
     st.divider()
     col_raw = st.color_picker(t.get("color_picker", "Chart Line Color"), "#A9A9A9", key="man_col")
     
-    if st.button(t.get("generate_profile", "Generate Profile"), type="primary", use_container_width=True):
-        with st.spinner(t.get("generating_spinner", "Generating 15-minute interval data...")):
+    if st.button("Generate Profile", type="primary", use_container_width=True):
+        with st.spinner("Generiere Profil..."):
             
-            # Aufruf der Berechnungslogik mit den dynamischen Noise-Parametern
-            df_synthetic = synthetic_load(
-                monthly_consumption=monthly_consumption,
-                days_per_week=days_per_week,
-                hours_per_day=hours_per_day,
-                base_load_pct=15, 
-                year=2026,
-                month=1,
-                noise_enabled=enable_noise,
-                noise_percentage=noise_percentage
+            # SCHRITT 1: Wir erstellen unser dummes, simples Objekt mit den Nutzer-Eingaben
+            baseline = BaselineScenario(
+                monthly_consumption = monthly_consumption,
+                days_per_week = days_per_week,
+                hours_per_day = hours_per_day,
+                num_connections = num_connections,
+                amperage = amperage,
+                enable_noise = enable_noise,
+                noise_percentage = noise_percentage
             )
             
-            # State-Management aktualisieren
-            st.session_state['resolution'] = 15
-            st.session_state['col_raw'] = col_raw
-            st.session_state['report_name'] = "Manual_Monthly_Profile"
-            st.session_state['grid_limit'] = float(calculated_grid_kw)
+            # SCHRITT 2: Wir lassen die Logik aus synthetic_load.py die echte Tabelle berechnen.
+            # Dabei bedienen wir uns einfach an den Werten, die wir gerade im Objekt gespeichert haben!
+            df_synthetic = synthetic_load(
+                monthly_consumption = baseline.monthly_consumption,
+                days_per_week = baseline.days_per_week,
+                hours_per_day = baseline.hours_per_day,
+                base_load_pct = 15, 
+                year = 2026,
+                month = 1,
+                noise_enabled = baseline.enable_noise,
+                noise_percentage = baseline.noise_percentage
+            )
+            
+            # SCHRITT 3: Wir legen die fertige Tabelle in unser Objekt ab
+            baseline.load_profile = df_synthetic
+            
+            # SCHRITT 4: Ab in den Tresor damit! (session_state)
+            # So können Tab 2 und der Chart jederzeit auf das Objekt zugreifen
+            st.session_state['baseline_scenario'] = baseline
+            
+            # (Optional) Für deinen bisherigen Chart.py Code behalten wir das hier kurz noch bei, 
+            # bis wir den Chart auch umgeschrieben haben:
             st.session_state['filtered_data'] = df_synthetic
+            st.session_state['grid_limit'] = float(num_connections * amperage * 400 * 1.732 / 1000)
             
-            st.success(t.get("success_profile", "Profile successfully generated!"))
-            
-            # Statistiken & Grenzwertprüfung im UI anzeigen
-            max_load = df_synthetic['consumption_kw'].max()
-            grid_limit = calculated_grid_kw
-            exceedance = max(0, max_load - grid_limit)
-            
-            st.write("### " + t.get("profile_stats", "Profile Statistics"))
-            stat_col1, stat_col2, stat_col3 = st.columns(3)
-            stat_col1.metric(t.get("max_load", "Peak Load (kW)"), f"{max_load:,.1f}")
-            stat_col2.metric(t.get("grid_limit_metric", "Grid Limit (kW)"), f"{grid_limit:,.1f}")
-            
-            if exceedance > 0:
-                stat_col3.metric(t.get("exceedance", "Exceedance (kW)"), f"{exceedance:,.1f}", delta="- Over Limit", delta_color="inverse")
-                st.error(t.get("warning_exceedance", f"Warning: The generated peak load exceeds the grid connection by {exceedance:,.1f} kW! Please adjust parameters."))
-            else:
-                stat_col3.metric(t.get("exceedance", "Exceedance (kW)"), "0.0", delta="Within Limits", delta_color="normal")
-            
+            st.success("Profil erfolgreich generiert und als Baseline gespeichert!")
             st.rerun()

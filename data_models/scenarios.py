@@ -1,22 +1,15 @@
 class BaselineScenario:
-    """
-    Represents the foundational scenario containing raw data and grid constraints.
-    """
-    def __init__(self, name: str, raw_data: pd.DataFrame, grid_limit_kw: float):
-        self.name = name
-        self.raw_data = raw_data
-        self.grid_limit_kw = grid_limit_kw
-
-class SubScenario:
-    """
-    Represents a variation built upon a BaselineScenario.
-    Stores only the delta parameters (Solar, Battery, Wind, Generator).
-    """
-    def __init__(self, name: str, parent_baseline: BaselineScenario):
-        self.name = name
-        self.parent_baseline = parent_baseline
+    def __init__(self, monthly_consumption, days_per_week, hours_per_day, num_connections, amperage, enable_noise, noise_percentage):
+        #user input
+        self.monthly_consumption = monthly_consumption
+        self.days_per_week = days_per_week
+        self.hours_per_day = hours_per_day
         
-        self.solar_params = None
-        self.battery_params = None
-        self.wind_params = None
-        self.generator_params = None
+        self.num_connections = num_connections
+        self.amperage = amperage
+        
+        self.enable_noise = enable_noise
+        self.noise_percentage = noise_percentage
+        
+        # profile is empty in the beginning, will get filled after the calcualtion
+        self.load_profile = None
