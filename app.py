@@ -4,6 +4,8 @@ import plotly.graph_objects as go
 from logic.energy_logic import load_and_clean_csv, process_consumption_data, simulate_battery_logic, get_exact_minimum_requirements
 from config.translations import LANGUAGES, CONTENT
 
+#this is the First Version
+
 def main():
     st.set_page_config(page_title="Pro Energy Simulator", layout="wide")
 
