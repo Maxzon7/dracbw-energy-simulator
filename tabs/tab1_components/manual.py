@@ -63,7 +63,7 @@ def render_manual_profile_generator():
     if st.button(t.get("generate_profile", "Generate Profile"), type="primary", use_container_width=True):
         with st.spinner(t.get("generating_spinner", "Generating 15-minute interval data...")):
             
-            # Aufruf der neuen Berechnungslogik (Nur für 1 Monat)
+            
             df_synthetic = synthetic_load(
                 monthly_consumption=monthly_consumption,
                 days_per_week=days_per_week,
