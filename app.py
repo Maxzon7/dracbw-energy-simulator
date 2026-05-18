@@ -25,7 +25,13 @@ def main():
 
     # --- LANGUAGE SELECTION ---
     st.sidebar.title("⚙️ Settings")
-    languages = {"English 🇬🇧": "en", "Deutsch 🇩🇪": "de"}
+    # Extended language options mapping display string to ISO code
+    languages = {
+        "English 🇬🇧": "en", 
+        "Deutsch 🇩🇪": "de",
+        "Español 🇪🇸": "es",
+        "Nederlands 🇳🇱": "nl"
+    }
     sel_lang = st.sidebar.selectbox("Language / Sprache", list(languages.keys()), index=0)
     lang_code = languages[sel_lang]
     
