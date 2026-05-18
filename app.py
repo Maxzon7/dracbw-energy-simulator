@@ -1,3 +1,58 @@
+
+
+
+import streamlit as st
+from config.translations import LANGUAGES, CONTENT
+
+# Import the logic for the different tabs
+from tabs.tab1_baseline import render_tab1_baseline
+from tabs.tab2_scenarios import render_tab2_scenarios
+from tabs.tab3_comparison import render_tab3_comparison
+
+def main():
+    # MUST BE THE FIRST COMMAND
+    st.set_page_config(page_title="Pro Energy Simulator", layout="wide")
+
+    # --- TRANSLATION SYSTEM ---
+    st.sidebar.title("⚙️ Settings")
+    sel_lang = st.sidebar.selectbox("Language / Sprache", list(LANGUAGES.keys()), index=0)
+    lang = LANGUAGES[sel_lang]
+    
+    # Secure fallback to English
+    t = CONTENT.get(lang, CONTENT["en"])
+    
+    # Header Area
+    st.title(t["title"])
+    st.error(t["warning"])
+    
+    with st.expander(t.get("info_title", "Technical Documentation")):
+        st.write(t.get("info_text", "Documentation text here..."))
+
+    # --- TAB NAVIGATION ---
+    tab1, tab2, tab3 = st.tabs([
+        t.get("tab_baseline", "1. Baseline"), 
+        t.get("tab_scenarios", "2. Scenarios"), 
+        t.get("tab_comparison", "3. Comparison")
+    ])
+    
+    # Render the contents of each tab and pass the translation dictionary
+    with tab1:
+        render_tab1_baseline(t)
+        
+    with tab2:
+        render_tab2_scenarios(t)
+        
+    with tab3:
+        render_tab3_comparison(t)
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+
+"""
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -150,3 +205,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+"""
