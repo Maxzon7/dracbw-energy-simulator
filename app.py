@@ -11,7 +11,12 @@ def load_translations() -> dict:
     """
     Loads translation bundles from a external JSON file to decouple data from logic.
     """
-    json_path = os.path.join("config", "translations.json")
+    # Get the absolute path to the directory where app.py is located
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # Construct the absolute path to the translations file
+    json_path = os.path.join(base_dir, "config", "translations.json")
+    
     with open(json_path, "r", encoding="utf-8") as file:
         return json.load(file)
 

@@ -73,10 +73,72 @@ def render_manual_profile_generator():
         
     st.divider()
     
-    st.write("### " + t.get("optional_loads", "Optional Additional Loads (In Development)"))
-    st.info("💡 " + t.get("optional_loads_desc", "In the future, EV chargers, heat pumps, or other specific consumers can be added here."))
+    # --- NEU: ANOMALY INJECTOR ---
+    st.write("### ⚡ Custom Load Anomalies & Peaks")
+    st.info("Inject specific peaks, drops, or recurring events into your baseline.")
+    
+    if 'anomalies' not in st.session_state:
+        st.session_state['anomalies'] = []
+        
+    with st.expander("➕ Add New Profile Anomaly"):
+        c1, c2 = st.columns(2)
+        with c1:
+            a_mode = st.radio("Frequency", ["Single Date", "Recurring Weekday"])
+        with c2:
+            a_action = st.radio("Action", ["Add Load (+ kW)", "Set Absolute Load (= kW)"])
+            
+        c3, c4 = st.columns(2)
+        with c3:
+            if a_mode == "Single Date":
+                a_date = st.date_input("Select Date")
+                a_day = None
+            else:
+                day_map = {"Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3, "Friday": 4, "Saturday": 5, "Sunday": 6}
+                a_day_str = st.selectbox("Select Weekday", list(day_map.keys()))
+                a_day = day_map[a_day_str]
+                a_date = None
+                
+            a_val = st.number_input("Value (kW)", min_value=0.0, value=50.0, step=10.0)
+            
+        with c4:
+            # Standardwerte für schnelles Klicken
+            a_start = st.time_input("Start Time", value=pd.to_datetime("08:00").time())
+            a_end = st.time_input("End Time", value=pd.to_datetime("12:00").time())
+            
+        if st.button("Save Anomaly", type="secondary"):
+            st.session_state['anomalies'].append({
+                "mode": a_mode,
+                "date": a_date,
+                "day": a_day,
+                "start": a_start,
+                "end": a_end,
+                "action": a_action,
+                "value": a_val
+            })
+            st.success("Anomaly added to registry!")
+            st.rerun()
+
+    # Aktive Anomalien in einer schicken Tabelle anzeigen
+    if st.session_state['anomalies']:
+        display_data = []
+        for i, a in enumerate(st.session_state['anomalies']):
+            when = str(a['date']) if a['mode'] == "Single Date" else ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][a['day']]
+            display_data.append({
+                "ID": i + 1,
+                "Type": a['mode'],
+                "When": when,
+                "Time": f"{a['start'].strftime('%H:%M')} - {a['end'].strftime('%H:%M')}",
+                "Action": "Add" if "Add" in a['action'] else "Set",
+                "kW": a['value']
+            })
+        st.dataframe(display_data, use_container_width=True, hide_index=True)
+        
+        if st.button("🗑️ Clear All Anomalies"):
+            st.session_state['anomalies'] = []
+            st.rerun()
 
     st.divider()
+    # --- ENDE NEU ---
 
     # --- NEU: ADVANCED MONTHLY CUSTOMIZATION ---
     st.write("### Advanced: Custom Monthly Profiles")
