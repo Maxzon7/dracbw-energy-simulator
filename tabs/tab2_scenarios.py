@@ -7,7 +7,7 @@ from tabs.tab2_components.solar_ui import render_solar_ui
 from tabs.tab2_components.battery_ui import render_battery_ui
 from tabs.tab2_components.scenario_engine import run_isolated_scenario
 
-# Den PDF-Export laden wir jetzt aus dem neuen Ordner
+# achtung 
 from tabs.tab2_components.pdf_export import generate_tech_pdf
 from logic.energy_logic import get_exact_minimum_requirements
 
