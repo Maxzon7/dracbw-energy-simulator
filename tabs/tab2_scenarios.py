@@ -7,7 +7,7 @@ from tabs.tab2_components.solar_ui import render_solar_ui
 from tabs.tab2_components.battery_ui import render_battery_ui
 from tabs.tab2_components.scenario_engine import run_isolated_scenario
 
-# achtung 
+# achtung funktioniert nur in der Community cloud, einfach perhashtag deaktivieren
 from tabs.tab2_components.pdf_export import generate_tech_pdf
 from logic.energy_logic import get_exact_minimum_requirements
 
