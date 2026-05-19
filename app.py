@@ -2,6 +2,8 @@ import streamlit as st
 import json
 import os
 
+#to run: python -m streamlit run MVP3/app.py
+
 # Import the UI modules for each tab
 from tabs.tab1_baseline import render_tab1_baseline
 from tabs.tab2_scenarios import render_tab2_scenarios
