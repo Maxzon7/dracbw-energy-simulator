@@ -34,6 +34,11 @@ def render_manual_profile_generator():
             min_value=1, max_value=24, value=8,
             help=t.get("help_hours_day", "Number of working hours per active day.")
         )
+        base_load_pct = st.slider(
+            "Base Load Level (%)", 
+            min_value=0, max_value=100, value=15, step=1,
+            help="The minimum background consumption running 24/7 during nights and weekends."
+        )
         
     with col2:
         st.write("#### " + t.get("grid_connection", "Grid Connection"))
@@ -193,9 +198,9 @@ def render_manual_profile_generator():
                     monthly_consumption = config["consumption"],
                     days_per_week = config["days"],
                     hours_per_day = config["hours"],
-                    base_load_pct = 15, 
+                    base_load_pct = base_load_pct, # <-- HIER GEÄNDERT: Variable statt fester 15!
                     year = 2026,
-                    month = m_idx, # Hier wird der aktuelle Monat 1-12 übergeben!
+                    month = m_idx, 
                     noise_enabled = enable_noise,
                     noise_percentage = noise_percentage
                 )
