@@ -1,6 +1,7 @@
 # tabs/tab1_components/chart.py
 import streamlit as st
 import plotly.graph_objects as go
+import pandas as pd
 
 def render_baseline_chart():
     """
