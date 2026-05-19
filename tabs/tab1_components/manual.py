@@ -2,7 +2,7 @@
 import streamlit as st
 from tabs.tab1_components.synthetic_load import synthetic_load
 from data_models.scenarios import BaselineScenario
-
+import pandas as pd
 def render_manual_profile_generator():
     """
     Renders the UI for generating synthetic 15-min load profiles for ONE MONTH.
@@ -75,12 +75,42 @@ def render_manual_profile_generator():
     
     st.write("### " + t.get("optional_loads", "Optional Additional Loads (In Development)"))
     st.info("💡 " + t.get("optional_loads_desc", "In the future, EV chargers, heat pumps, or other specific consumers can be added here."))
+
+    st.divider()
+
+    # --- NEU: ADVANCED MONTHLY CUSTOMIZATION ---
+    st.write("### Advanced: Custom Monthly Profiles")
+    use_custom_months = st.checkbox("Enable custom logic per month", value=False)
     
+    # Hier speichern wir die Konfigurationen für alle 12 Monate
+    monthly_configs = {}
+    
+    if use_custom_months:
+        st.info("Values are pre-filled with your standard configuration. Adjust specific months as needed.")
+        month_names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        tabs = st.tabs(month_names)
+        
+        for i, tab in enumerate(tabs):
+            m_idx = i + 1
+            with tab:
+                # Wichtig: key=... verhindert Abstürze bei gleichen Slider-Namen
+                m_cons = st.number_input(f"Consumption (kWh) - {month_names[i]}", value=monthly_consumption, key=f"c_{m_idx}")
+                m_days = st.slider(f"Working Days - {month_names[i]}", min_value=1, max_value=7, value=days_per_week, key=f"d_{m_idx}")
+                m_hours = st.slider(f"Working Hours - {month_names[i]}", min_value=1, max_value=24, value=hours_per_day, key=f"h_{m_idx}")
+                monthly_configs[m_idx] = {"consumption": m_cons, "days": m_days, "hours": m_hours}
+    else:
+        # Wenn Checkbox aus ist: Standardwerte 12x kopieren
+        for i in range(1, 13):
+            monthly_configs[i] = {"consumption": monthly_consumption, "days": days_per_week, "hours": hours_per_day}
+    # --- ENDE NEU ---
+    
+
+
     st.divider()
     col_raw = st.color_picker(t.get("color_picker", "Chart Line Color"), "#A9A9A9", key="man_col")
     
     if st.button("Generate Profile", type="primary", use_container_width=True):
-        with st.spinner("Generiere Profil..."):
+        with st.spinner("Generating profile..."):
             
             # SCHRITT 1: Wir erstellen unser dummes, simples Objekt mit den Nutzer-Eingaben
             baseline = BaselineScenario(
@@ -94,29 +124,32 @@ def render_manual_profile_generator():
             )
             
             # SCHRITT 2: Wir lassen die Logik aus synthetic_load.py die echte Tabelle berechnen.
-            # Dabei bedienen wir uns einfach an den Werten, die wir gerade im Objekt gespeichert haben!
-            df_synthetic = synthetic_load(
-                monthly_consumption = baseline.monthly_consumption,
-                days_per_week = baseline.days_per_week,
-                hours_per_day = baseline.hours_per_day,
-                base_load_pct = 15, 
-                year = 2026,
-                month = 1,
-                noise_enabled = baseline.enable_noise,
-                noise_percentage = baseline.noise_percentage
-            )
+            monthly_dfs = []
+            for m_idx in range(1, 13):
+                config = monthly_configs[m_idx]
+                df_month = synthetic_load(
+                    monthly_consumption = config["consumption"],
+                    days_per_week = config["days"],
+                    hours_per_day = config["hours"],
+                    base_load_pct = 15, 
+                    year = 2026,
+                    month = m_idx, # Hier wird der aktuelle Monat 1-12 übergeben!
+                    noise_enabled = enable_noise,
+                    noise_percentage = noise_percentage
+                )
+                monthly_dfs.append(df_month)
+                
+            # Alle 12 Monate zu einem einzigen Jahres-DataFrame zusammenfügen
+            annual_df = pd.concat(monthly_dfs)
+            annual_df.sort_index(inplace=True)
             
-            # SCHRITT 3: Wir legen die fertige Tabelle in unser Objekt ab
-            baseline.load_profile = df_synthetic
+            # SCHRITT 3: Wir legen die fertige Jahres-Tabelle in unser Objekt ab
+            baseline.load_profile = annual_df
             
-            # SCHRITT 4: Ab in den Tresor damit! (session_state)
-            # So können Tab 2 und der Chart jederzeit auf das Objekt zugreifen
+            # SCHRITT 4: Ab in den Tresor!
             st.session_state['baseline_scenario'] = baseline
-            
-            # (Optional) Für deinen bisherigen Chart.py Code behalten wir das hier kurz noch bei, 
-            # bis wir den Chart auch umgeschrieben haben:
-            st.session_state['filtered_data'] = df_synthetic
+            st.session_state['filtered_data'] = annual_df
             st.session_state['grid_limit'] = float(num_connections * amperage * 400 * 1.732 / 1000)
             
-            st.success("Profil erfolgreich generiert und als Baseline gespeichert!")
+            st.success("Jahresprofil erfolgreich generiert und als Baseline gespeichert!")
             st.rerun()
