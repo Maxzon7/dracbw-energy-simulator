@@ -9,21 +9,46 @@ def render_baseline_chart():
     t = st.session_state['t']
     
     if 'filtered_data' in st.session_state and st.session_state['filtered_data'] is not None:
-        filtered_data = st.session_state['filtered_data']
-        grid_limit = st.session_state.get('grid_limit', 50.0)
-        col_raw_current = st.session_state.get('col_raw', "#A9A9A9")
+        # 1. Get the full year dataframe from session state
+        df = st.session_state['filtered_data']
+    
+        # Safety check: Ensure 'timestamp' is in datetime format for pandas filtering
+        if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
 
-        st.subheader(t["chart_load"])
-        fig_load = go.Figure()
-        fig_load.add_trace(go.Scatter(
-            x=filtered_data['timestamp'], 
-            y=filtered_data['consumption_kw'], 
-            name="Load Profile", 
-            line=dict(color=col_raw_current, width=1)
-        ))
-        fig_load.add_hline(y=grid_limit, line_dash="dash", line_color="red", name="Grid Limit")
-        fig_load.update_layout(height=450, yaxis_title="kW", margin=dict(t=10, b=10))
-        
-        st.plotly_chart(fig_load, use_container_width=True)
+        # ==========================================
+        # UPPER PART: DETAILED MONTHLY CHART
+        # ==========================================
+        st.write("### 📊 Detailed Monthly View")
+    
+        # Dropdown to select the month for the upper chart
+        month_names = ["January", "February", "March", "April", "May", "June", 
+                       "July", "August", "September", "October", "November", "December"]
+    
+        selected_month_name = st.selectbox(
+            "Select month to inspect:", 
+            month_names, 
+            index=0 # Default to January
+        )
+    
+        # Map the selected month name back to its numeric index (1 to 12)
+        selected_month_idx = month_names.index(selected_month_name) + 1
+    
+        # Filter the full year dataframe down to just the selected month
+        monthly_df = df[df['timestamp'].dt.month == selected_month_idx]
+    
+        # Render the detailed monthly chart
+        # Note: If you use Plotly/Altair here, just pass 'monthly_df' to your custom charting logic
+        st.line_chart(data=monthly_df, x="timestamp", y="consumption_kw")
+    
+        st.divider()
+
+        # ==========================================
+        # LOWER PART: FULL YEAR OVERVIEW
+        # ==========================================
+        st.write("### 📅 Full Year Overview")
+    
+        # Render the complete 12-month series as a macro-perspective
+        st.line_chart(data=df, x="timestamp", y="consumption_kw")
     else:
         st.info("Upload a CSV or generate a manual profile on the left to view data.")
