@@ -139,9 +139,11 @@ def render_manual_profile_generator():
                 )
                 monthly_dfs.append(df_month)
                 
-            # Alle 12 Monate zu einem einzigen Jahres-DataFrame zusammenfügen
-            annual_df = pd.concat(monthly_dfs)
-            annual_df.sort_index(inplace=True)
+            # Alle 12 Monate zusammenfügen und den Index komplett neu aufbauen
+            annual_df = pd.concat(monthly_dfs, ignore_index=True)
+            # Zur absoluten Sicherheit nach dem Zeitstempel chronologisch sortieren
+            annual_df.sort_values("timestamp", inplace=True)
+            annual_df.reset_index(drop=True, inplace=True)
             
             # SCHRITT 3: Wir legen die fertige Jahres-Tabelle in unser Objekt ab
             baseline.load_profile = annual_df
