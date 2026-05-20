@@ -9,7 +9,7 @@ def run_isolated_scenario(baseline_df: pd.DataFrame, mode: str, params: tuple, g
     """
     df = baseline_df.copy()
     
-    # 1. Standard-Spalten anlegen (damit die Charts immer funktionieren)
+    # 1. Standard-Spalten anlegen
     df['solar_gen_kw'] = 0.0
     df['unprofitable_excess_kw'] = 0.0
     df['battery_action_kw'] = 0.0
@@ -32,11 +32,15 @@ def run_isolated_scenario(baseline_df: pd.DataFrame, mode: str, params: tuple, g
     # PFAD B: NUR BATTERIE
     # ==========================================
     elif mode == "Battery (Peak Shaving)":
-        enable, b_cap, b_pwr = params
-        if enable and b_cap > 0:
-            bat_res = simulate_battery_logic(df, grid_limit, b_cap, b_pwr, res)
+        enable, b_params = params
+        if enable and b_params["b_cap"] > 0:
+            bat_res = simulate_battery_logic(df, grid_limit, b_params, res)
             df['battery_action_kw'] = bat_res['battery_action_kw']
             df['battery_soc_kwh'] = bat_res['battery_soc_kwh']
             df['final_grid_load_kw'] = bat_res['final_grid_load_kw']
+            
+            # Die Degradations-KPIs hängen wir uns unsichtbar als Meta-Daten an
+            if hasattr(bat_res, 'attrs'):
+                df.attrs['bess_metrics'] = bat_res.attrs.get('bess_metrics', {})
             
     return df

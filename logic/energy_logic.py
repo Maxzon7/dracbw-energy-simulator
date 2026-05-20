@@ -112,34 +112,77 @@ def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, inter
 
 def simulate_battery_logic(df: pd.DataFrame, 
                            grid_limit_kw: float, 
-                           battery_cap_kwh: float, 
-                           battery_power_kw: float,
+                           b_params: dict, 
                            interval_min: int) -> pd.DataFrame:
     """
-    Core simulation loop for battery State of Charge (SoC).
+    Advanced simulation loop for battery State of Charge (SoC).
+    Incorporates efficiency, min/max SoC limits, and throughput tracking.
     """
     results = df.copy()
     interval_hours = interval_min / 60.0
     
+    cap_kwh = b_params.get('b_cap', 0.0)
+    pwr_kw = b_params.get('b_pwr', 0.0)
+    
+    # Wirkungsgrad (Wird physikalisch auf Laden und Entladen aufgeteilt)
+    # Bsp: 90% Round-Trip -> ~94.8% Lade-Effizienz und ~94.8% Entlade-Effizienz
+    eff_roundtrip = b_params.get('eff', 100.0) / 100.0
+    eff_half = eff_roundtrip ** 0.5
+    
+    # SoC-Grenzen (Prozent in echte kWh umwandeln)
+    min_soc_kwh = cap_kwh * (b_params.get('min_soc', 0.0) / 100.0)
+    max_soc_kwh = cap_kwh * (b_params.get('max_soc', 100.0) / 100.0)
+    
+    # Startwerte
+    current_soc_kwh = cap_kwh * (b_params.get('init_soc', 50.0) / 100.0)
+    total_discharged_kwh = 0.0
+    
     soc_list = []
     battery_action_list = [] 
-    
-    current_soc_kwh = 0.0 # Start empty
     
     for _, row in results.iterrows():
         load = row['consumption_kw']
         diff_kw = load - grid_limit_kw
         actual_battery_kw = 0.0
         
-        if diff_kw > 0: # Peak detected -> Discharge
-            max_discharge = min(diff_kw, battery_power_kw, current_soc_kwh / interval_hours)
-            actual_battery_kw = max_discharge
-            current_soc_kwh -= (actual_battery_kw * interval_hours)
-        elif diff_kw < 0: # Charging opportunity -> Charge
+        if diff_kw > 0: # Peak erkannt -> Batterie muss entladen
+            # 1. Leistungsbremse
+            max_kw_needed = min(diff_kw, pwr_kw)
+            
+            # 2. Energiebremse (Wie viel Strom darf fließen, bevor Min SoC erreicht wird?)
+            # Um das Netz zu bedienen, muss MEHR aus der Zelle gesaugt werden (wegen Verlust)
+            available_energy_kwh = current_soc_kwh - min_soc_kwh
+            max_possible_kw_from_batt = available_energy_kwh / interval_hours
+            max_kw_to_grid = max_possible_kw_from_batt * eff_half
+            
+            # Tatsächliche Lieferung ans Netz
+            actual_battery_kw = min(max_kw_needed, max_kw_to_grid)
+            
+            # 3. SoC aktualisieren (Brutto-Energie aus den Zellen abziehen)
+            energy_drawn_gross = (actual_battery_kw * interval_hours) / eff_half
+            current_soc_kwh -= energy_drawn_gross
+            total_discharged_kwh += actual_battery_kw * interval_hours
+            
+        elif diff_kw < 0: # Platz im Netz -> Batterie kann laden
+            # 1. Leistungsbremse
             spare_kw = abs(diff_kw)
-            max_charge = min(spare_kw, battery_power_kw, (battery_cap_kwh - current_soc_kwh) / interval_hours)
-            actual_battery_kw = -max_charge # Negative means energy goes INTO the battery
-            current_soc_kwh += (abs(actual_battery_kw) * interval_hours)
+            max_kw_available = min(spare_kw, pwr_kw)
+            
+            # 2. Platzbremse (Wie viel geht noch rein, bis Max SoC erreicht ist?)
+            available_space_kwh = max_soc_kwh - current_soc_kwh
+            # Um den Platz zu füllen, dürfen wir wegen Ladeverlusten MEHR aus dem Netz ziehen
+            max_possible_kw_from_grid = available_space_kwh / interval_hours / eff_half
+            
+            # Tatsächlicher Strombezug aus dem Netz
+            actual_charge_kw = min(max_kw_available, max_possible_kw_from_grid)
+            actual_battery_kw = -actual_charge_kw # Negativ = Energie fließt IN die Batterie
+            
+            # 3. SoC aktualisieren (Netto-Energie in die Zellen speichern)
+            energy_stored_net = (actual_charge_kw * interval_hours) * eff_half
+            current_soc_kwh += energy_stored_net
+            
+        # Sicherheitsanker gegen Float-Ungenauigkeiten (Kappen auf Min/Max)
+        current_soc_kwh = max(min_soc_kwh, min(max_soc_kwh, current_soc_kwh))
             
         soc_list.append(current_soc_kwh)
         battery_action_list.append(actual_battery_kw)
@@ -147,5 +190,17 @@ def simulate_battery_logic(df: pd.DataFrame,
     results['battery_soc_kwh'] = soc_list
     results['battery_action_kw'] = battery_action_list
     results['final_grid_load_kw'] = results['consumption_kw'] - results['battery_action_kw']
+    
+    # --- Degradations-Analyse für das Reporting ---
+    cycles = total_discharged_kwh / cap_kwh if cap_kwh > 0 else 0
+    cal_loss_pct = b_params.get('cal_deg', 0.0)
+    cyc_loss_pct = (cycles / 1000.0) * b_params.get('cyc_deg', 0.0)
+    total_loss_pct = cal_loss_pct + cyc_loss_pct
+    
+    # Meta-Daten an den DataFrame anhängen (damit wir sie später in Tab 3 oder PDF abrufen können)
+    results.attrs['bess_metrics'] = {
+        'cycles': cycles,
+        'degradation_pct': total_loss_pct
+    }
     
     return results
