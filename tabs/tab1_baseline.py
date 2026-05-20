@@ -4,6 +4,7 @@ from tabs.tab1_components.toggle import render_data_source_toggle
 from tabs.tab1_components.upload import render_csv_upload_section
 from tabs.tab1_components.manual import render_manual_profile_generator
 from tabs.tab1_components.chart import render_baseline_chart
+from tabs.tab1_components.project_params import render_project_parameters
 
 def render_tab1_baseline():
     """
@@ -15,7 +16,7 @@ def render_tab1_baseline():
     st.header(t.get("tab_baseline", "Baseline Profile"))
     
     # ==========================================
-    # 0. SCENARIO REGISTRY (KONTROLLZENTRUM)
+    # 0. SCENARIO REGISTRY
     # ==========================================
     if 'scenario_registry' not in st.session_state:
         st.session_state['scenario_registry'] = {}
@@ -55,6 +56,12 @@ def render_tab1_baseline():
                     del st.session_state['filtered_data']
                 st.rerun()
                 
+    st.divider()
+
+    # ==========================================
+    # NEU: 0.5 UNIVERSAL PROJECT PARAMETERS
+    # ==========================================
+    render_project_parameters()
     st.divider()
 
     # ==========================================

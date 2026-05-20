@@ -217,6 +217,7 @@ def render_manual_profile_generator():
                 "grid_limit": calculated_grid_kw,
                 "anomalies": st.session_state.get('anomalies', []),
                 "params": {
+                    "project_metadata": st.session_state.get('project_metadata', {}),
                     "monthly_consumption": monthly_consumption,
                     "days_per_week": days_per_week,
                     "hours_per_day": hours_per_day,

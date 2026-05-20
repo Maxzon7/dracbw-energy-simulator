@@ -98,6 +98,7 @@ def render_csv_upload_section():
                 "grid_limit": grid_limit,
                 "anomalies": [], # CSV ignoriert Anomalien vorerst wie besprochen
                 "params": {
+                    "project_metadata": st.session_state.get('project_metadata', {}),
                     "data_source": "CSV",
                     "report_name": report_name,
                     "grid_limit": grid_limit,
