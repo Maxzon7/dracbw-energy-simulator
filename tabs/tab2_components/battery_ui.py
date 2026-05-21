@@ -1,45 +1,89 @@
 # tabs/tab2_components/battery_ui.py
 import streamlit as st
 
-def render_battery_ui():
+def render_battery_ui(scenario_id: str) -> dict:
     """
-    Renders the advanced input fields for the Battery BESS module.
+    Layer 1: Renders advanced UI inputs for the BESS (Battery Energy Storage System).
+    Includes targeted shaving thresholds and dynamic recharge boundary windows.
     """
-    st.write("### 🔋 Battery Storage (Peak Shaving)")
-    enable_battery = st.toggle("Enable Battery Simulation", value=True)
+    st.write("### 🔋 BESS Storage Dimensioning")
+    st.info("Configure the storage hardware limits, target operational thresholds, and battery recharging strategy.")
     
-    # Standard-Wörterbuch (Dictionary) anlegen, damit immer Werte existieren
-    b_params = {
-        "b_cap": 0.0, "b_pwr": 0.0, "eff": 90.0,
-        "min_soc": 10.0, "max_soc": 100.0, "init_soc": 50.0,
-        "cal_deg": 1.5, "cyc_deg": 2.0
-    }
+    col1, col2 = st.columns(2)
     
-    if enable_battery:
-        st.write("#### 1. Hardware Specifications")
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            b_params["b_cap"] = st.number_input("Capacity (kWh)", min_value=0.0, value=100.0, step=10.0)
-        with c2:
-            b_params["b_pwr"] = st.number_input("Max Power (kW)", min_value=0.0, value=50.0, step=5.0)
-        with c3:
-            b_params["eff"] = st.number_input("Round-Trip Efficiency (%)", min_value=50.0, max_value=100.0, value=90.0, step=1.0)
-            
-        st.write("#### 2. Operational Limits (SoC)")
-        c4, c5, c6 = st.columns(3)
-        with c4:
-            b_params["min_soc"] = st.number_input("Min SoC (%)", min_value=0.0, max_value=100.0, value=10.0, step=1.0)
-        with c5:
-            b_params["max_soc"] = st.number_input("Max SoC (%)", min_value=0.0, max_value=100.0, value=95.0, step=1.0)
-        with c6:
-            b_params["init_soc"] = st.number_input("Initial SoC (%)", min_value=0.0, max_value=100.0, value=50.0, step=1.0)
+    with col1:
+        st.write("**Hardware Capacity & Power**")
+        b_cap = st.number_input(
+            "Storage Capacity (kWh)", 
+            min_value=10, max_value=5000, value=200, step=50,
+            key=f"bat_cap_{scenario_id}"
+        )
+        b_pwr = st.number_input(
+            "Max Inverter Power (kW)", 
+            min_value=5, max_value=2000, value=100, step=25,
+            key=f"bat_pwr_{scenario_id}"
+        )
+        
+        st.divider()
+        st.write("**🎯 Peak Shaving Target**")
+        shaving_threshold = st.number_input(
+            "Target Shaving Threshold (kW)",
+            min_value=10.0, max_value=5000.0, value=120.0, step=10.0,
+            help="The battery will discharge to keep the grid demand strictly at or below this value.",
+            key=f"bat_thresh_{scenario_id}"
+        )
 
-        st.write("#### 3. Degradation Parameters")
-        c7, c8 = st.columns(2)
-        with c7:
-            b_params["cal_deg"] = st.number_input("Calendar Degradation (%/year)", min_value=0.0, value=1.5, step=0.1)
-        with c8:
-            b_params["cyc_deg"] = st.number_input("Cyclic Degradation (%/1000 cycles)", min_value=0.0, value=2.0, step=0.1)
-            
-    # Wir geben jetzt nicht mehr einzelne Werte zurück, sondern das gesamte Paket
-    return enable_battery, b_params
+    with col2:
+        st.write("**🔄 Intelligent Recharge Control**")
+        charge_pwr_limit = st.slider(
+            "Max Recharge Power Limit (kW)",
+            min_value=5, max_value=500, value=30, step=5,
+            help="Limits how fast the battery pulls power to recharge, preventing secondary grid peaks.",
+            key=f"bat_chg_lim_{scenario_id}"
+        )
+        
+        st.write("#### Allowed Charging Window")
+        charge_start_hour = st.slider(
+            "Window Start Time (Hour)", min_value=0, max_value=23, value=22,
+            key=f"bat_chg_start_{scenario_id}"
+        )
+        charge_end_hour = st.slider(
+            "Window End Time (Hour)", min_value=0, max_value=23, value=6,
+            key=f"bat_chg_end_{scenario_id}"
+        )
+        
+        green_charging = st.toggle(
+            "Green Charging Only (Solar Surplus)", 
+            value=False,
+            help="If enabled, the battery will refuse grid electricity and only recharge via free local solar excess.",
+            key=f"bat_green_{scenario_id}"
+        )
+
+    st.divider()
+    
+    st.write("**Physical Efficiency Parameters**")
+    col_eff1, col_eff2 = st.columns(2)
+    with col_eff1:
+        efficiency = st.slider(
+            "Round-Trip Efficiency (%)", 
+            min_value=75, max_value=98, value=92,
+            help="Total AC-to-AC conversion efficiency. Splitted equally via square root on charge/discharge cycles.",
+            key=f"bat_eff_{scenario_id}"
+        )
+    with col_eff2:
+        initial_soc_pct = st.slider(
+            "Initial State of Charge (%)", min_value=0, max_value=100, value=50,
+            key=f"bat_soc_init_{scenario_id}"
+        )
+
+    return {
+        "b_cap": b_cap,
+        "b_pwr": b_pwr,
+        "shaving_threshold": shaving_threshold,
+        "charge_pwr_limit": charge_pwr_limit,
+        "charge_start_hour": charge_start_hour,
+        "charge_end_hour": charge_end_hour,
+        "green_charging": green_charging,
+        "efficiency": efficiency,
+        "initial_soc_pct": initial_soc_pct
+    }

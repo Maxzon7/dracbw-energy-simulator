@@ -90,7 +90,7 @@ def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, inter
     virtual_soc = 0.0
     min_soc_reached = 0.0
     
-    
+
     for power_diff in diff:
         if power_diff > 0: 
             # Deficit: We need energy from the battery
@@ -111,97 +111,102 @@ def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, inter
         "true_min_capacity_kwh": true_min_capacity_kwh
     }
 
-def simulate_battery_logic(df: pd.DataFrame, 
-                           grid_limit_kw: float, 
-                           b_params: dict, 
-                           interval_min: int) -> pd.DataFrame:
+def simulate_battery_logic(df: pd.DataFrame, grid_limit: float, b_params: dict, res: int = 15) -> pd.DataFrame:
     """
-    Advanced simulation loop for battery State of Charge (SoC).
-    Incorporates efficiency, min/max SoC limits, and throughput tracking.
+    Simulates a highly precise physical quarter-hourly battery storage dispatch loop.
+    Implements threshold trigger constraints and controlled, safe recharging schedules.
     """
-    results = df.copy()
-    interval_hours = interval_min / 60.0
+    res_factor = 60 / res # 4 for 15-min intervals
     
-    cap_kwh = b_params.get('b_cap', 0.0)
-    pwr_kw = b_params.get('b_pwr', 0.0)
+    # Extract structural configuration parameters
+    b_cap = b_params.get('b_cap', 200.0)
+    b_pwr = b_params.get('b_pwr', 100.0)
+    shaving_threshold = b_params.get('shaving_threshold', 120.0)
+    charge_pwr_limit = b_params.get('charge_pwr_limit', 30.0)
+    start_hour = b_params.get('charge_start_hour', 22)
+    end_hour = b_params.get('charge_end_hour', 6)
+    green_charging = b_params.get('green_charging', False)
     
-    # Wirkungsgrad (Wird physikalisch auf Laden und Entladen aufgeteilt)
-    # Bsp: 90% Round-Trip -> ~94.8% Lade-Effizienz und ~94.8% Entlade-Effizienz
-    eff_roundtrip = b_params.get('eff', 100.0) / 100.0
-    eff_half = eff_roundtrip ** 0.5
+    # Mathematical split of round-trip loss using square root
+    eff_factor = (b_params.get('efficiency', 92.0) / 100.0) ** 0.5
     
-    # SoC-Grenzen (Prozent in echte kWh umwandeln)
-    min_soc_kwh = cap_kwh * (b_params.get('min_soc', 0.0) / 100.0)
-    max_soc_kwh = cap_kwh * (b_params.get('max_soc', 100.0) / 100.0)
+    # State tracking vectors
+    soc_history = []
+    action_history = []
+    final_grid_load = []
     
-    # Startwerte
-    current_soc_kwh = cap_kwh * (b_params.get('init_soc', 50.0) / 100.0)
-    total_discharged_kwh = 0.0
+    # Establish starting capacity
+    current_soc_kwh = b_cap * (b_params.get('initial_soc_pct', 50.0) / 100.0)
     
-    soc_list = []
-    battery_action_list = [] 
-    
-    for _, row in results.iterrows():
-        load = row['consumption_kw']
-        diff_kw = load - grid_limit_kw
-        actual_battery_kw = 0.0
-        
-        if diff_kw > 0: # Peak erkannt -> Batterie muss entladen
-            # 1. Leistungsbremse
-            max_kw_needed = min(diff_kw, pwr_kw)
-            
-            # 2. Energiebremse (Wie viel Strom darf fließen, bevor Min SoC erreicht wird?)
-            # Um das Netz zu bedienen, muss MEHR aus der Zelle gesaugt werden (wegen Verlust)
-            available_energy_kwh = current_soc_kwh - min_soc_kwh
-            max_possible_kw_from_batt = available_energy_kwh / interval_hours
-            max_kw_to_grid = max_possible_kw_from_batt * eff_half
-            
-            # Tatsächliche Lieferung ans Netz
-            actual_battery_kw = min(max_kw_needed, max_kw_to_grid)
-            
-            # 3. SoC aktualisieren (Brutto-Energie aus den Zellen abziehen)
-            energy_drawn_gross = (actual_battery_kw * interval_hours) / eff_half
-            current_soc_kwh -= energy_drawn_gross
-            total_discharged_kwh += actual_battery_kw * interval_hours
-            
-        elif diff_kw < 0: # Platz im Netz -> Batterie kann laden
-            # 1. Leistungsbremse
-            spare_kw = abs(diff_kw)
-            max_kw_available = min(spare_kw, pwr_kw)
-            
-            # 2. Platzbremse (Wie viel geht noch rein, bis Max SoC erreicht ist?)
-            available_space_kwh = max_soc_kwh - current_soc_kwh
-            # Um den Platz zu füllen, dürfen wir wegen Ladeverlusten MEHR aus dem Netz ziehen
-            max_possible_kw_from_grid = available_space_kwh / interval_hours / eff_half
-            
-            # Tatsächlicher Strombezug aus dem Netz
-            actual_charge_kw = min(max_kw_available, max_possible_kw_from_grid)
-            actual_battery_kw = -actual_charge_kw # Negativ = Energie fließt IN die Batterie
-            
-            # 3. SoC aktualisieren (Netto-Energie in die Zellen speichern)
-            energy_stored_net = (actual_charge_kw * interval_hours) * eff_half
-            current_soc_kwh += energy_stored_net
-            
-        # Sicherheitsanker gegen Float-Ungenauigkeiten (Kappen auf Min/Max)
-        current_soc_kwh = max(min_soc_kwh, min(max_soc_kwh, current_soc_kwh))
-            
-        soc_list.append(current_soc_kwh)
-        battery_action_list.append(actual_battery_kw)
+    # Check if a solar yield baseline column exists to factor in net load offsets
+    load_source_col = 'net_load_kw' if 'net_load_kw' in df.columns else 'consumption_kw'
+    solar_gen_col = 'solar_gen_kw' if 'solar_gen_kw' in df.columns else None
 
-    results['battery_soc_kwh'] = soc_list
-    results['battery_action_kw'] = battery_action_list
-    results['final_grid_load_kw'] = results['consumption_kw'] - results['battery_action_kw']
+    # THE CORE 34,560 INTERVAL STEPPING LOOP
+    for _, row in df.iterrows():
+        timestamp = row['timestamp']
+        current_load = row[load_source_col]
+        solar_yield = row[solar_gen_col] if solar_gen_col else 0.0
+        
+        current_hour = timestamp.hour
+        battery_action_kw = 0.0 # Negative = Charging, Positive = Discharging
+        
+        # --- PHASE 1: DISCHARGING MODE (PEAK SHAVING TRIGGER) ---
+        if current_load > shaving_threshold:
+            required_discharge_kw = current_load - shaving_threshold
+            
+            # Limit by maximum physical inverter constraint
+            allowed_discharge_kw = min(required_discharge_kw, b_pwr)
+            
+            # Limit by actual remaining chemical energy in the cells (factoring efficiency loss)
+            max_available_from_cells_kw = (current_soc_kwh * res_factor) * eff_factor
+            final_discharge_kw = min(allowed_discharge_kw, max_available_from_cells_kw)
+            
+            # Dispatch energy and update system memory states
+            battery_action_kw = final_discharge_kw
+            current_soc_kwh -= (final_discharge_kw / res_factor) / eff_factor
+            
+        # --- PHASE 2: SAFE RECHARGING MODE ---
+        else:
+            # Evaluate time window window boundary rules
+            is_inside_window = False
+            if start_hour <= end_hour:
+                is_inside_window = (start_hour <= current_hour <= end_hour)
+            else: # Handles overnight wrap-around windows (e.g., 22:00 to 06:00)
+                is_inside_window = (current_hour >= start_hour or current_hour <= end_hour)
+                
+            if is_inside_window and current_soc_kwh < b_cap:
+                # Calculate maximum headroom capacity inside the tank
+                empty_space_kwh = b_cap - current_soc_kwh
+                max_charge_allowed_by_cells_kw = (empty_space_kwh * res_factor) / eff_factor
+                
+                # Base charging ceiling driven by hardware settings
+                max_charging_speed_kw = min(b_pwr, charge_pwr_limit, max_charge_allowed_by_cells_kw)
+                
+                if green_charging:
+                    # Only charge using real physical solar surplus power
+                    solar_surplus_kw = max(0.0, solar_yield - row['consumption_kw'])
+                    final_charge_kw = min(max_charging_speed_kw, solar_surplus_kw)
+                else:
+                    # Grid charging: CRITICAL constraint to prevent creating a secondary peak!
+                    # Total grid draw (load + battery charge) must never cross the shaving threshold
+                    grid_headroom_kw = max(0.0, shaving_threshold - current_load)
+                    final_charge_kw = min(max_charging_speed_kw, grid_headroom_kw)
+                
+                # Absorbing energy into storage and update system memory states
+                battery_action_kw = -final_charge_kw
+                current_soc_kwh += (final_charge_kw / res_factor) * eff_factor
+
+        # Finalize array tracking states
+        soc_history.append(current_soc_kwh)
+        action_history.append(battery_action_kw)
+        
+        # Grid load is baseline consumption minus battery output (discharge reduces, charge increases it)
+        final_grid_load.append(current_load - battery_action_kw)
+
+    # Append structural result profiles to the output dataframe package
+    df['battery_soc_kwh'] = soc_history
+    df['battery_action_kw'] = action_history
+    df['final_grid_load_kw'] = final_grid_load
     
-    # --- Degradations-Analyse für das Reporting ---
-    cycles = total_discharged_kwh / cap_kwh if cap_kwh > 0 else 0
-    cal_loss_pct = b_params.get('cal_deg', 0.0)
-    cyc_loss_pct = (cycles / 1000.0) * b_params.get('cyc_deg', 0.0)
-    total_loss_pct = cal_loss_pct + cyc_loss_pct
-    
-    # Meta-Daten an den DataFrame anhängen (damit wir sie später in Tab 3 oder PDF abrufen können)
-    results.attrs['bess_metrics'] = {
-        'cycles': cycles,
-        'degradation_pct': total_loss_pct
-    }
-    
-    return results
+    return df

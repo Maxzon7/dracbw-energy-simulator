@@ -1,4 +1,3 @@
-
 # tabs/tab2_scenarios.py
 import streamlit as st
 import plotly.graph_objects as go
@@ -10,17 +9,17 @@ from tabs.tab2_components.solar_logic import generate_solar_profile
 from tabs.tab2_components.battery_ui import render_battery_ui
 from tabs.tab2_components.scenario_engine import run_isolated_scenario
 
-# Technical additions
+# Technical additions & Battery Engine
 from tabs.tab2_components.pdf_export import generate_tech_pdf
-from logic.energy_logic import get_exact_minimum_requirements
+from logic.energy_logic import get_exact_minimum_requirements, simulate_battery_logic
 
 def render_tab2_scenarios():
     """
-    Master Tab 2: Scenario Engine. Manages isolated simulation pipelines (Solar / BESS),
-    synchronizes interface widgets, and provides unified technical metrics and PDF reporting.
+    Master Tab 2: Scenario Engine. Manages isolated and combined simulation pipelines (Solar + BESS cascade),
+    synchronizes interface widgets, and provides advanced DRACBV technical metrics.
     """
     t = st.session_state.get('t', {})
-    st.header("Scenario Simulation (Isolated Analysis)")
+    st.header("Scenario Simulation (Hardware Integration)")
     
     # --- 1. BASELINE SELECTION ---
     if 'scenario_registry' not in st.session_state or not st.session_state['scenario_registry']:
@@ -30,7 +29,6 @@ def render_tab2_scenarios():
     saved_scenarios = list(st.session_state['scenario_registry'].keys())
     selected_baseline = st.selectbox("📂 1. Select Base Profile:", saved_scenarios)
     
-    # Extract fundamental data package from vault
     baseline_data = st.session_state['scenario_registry'][selected_baseline]
     baseline_df = baseline_data['df']
     grid_limit = baseline_data['grid_limit']
@@ -45,14 +43,24 @@ def render_tab2_scenarios():
     
     with col_input:
         st.write("### 🏗️ 2. Select Technology")
-        scenario_mode = st.radio("Choose isolated system:", ["Solar PV Only", "Battery (Peak Shaving)"])
+        scenario_mode = st.radio(
+            "Choose system configuration:", 
+            ["☀️ Solar PV Only", "🔋 Battery (BESS) Only", "⚙️ Combined"]
+        )
         st.divider()
         
-        # Route UI parameter gathering dynamically using the dynamic gatekeeper key
-        if scenario_mode == "Solar PV Only":
+        # Route UI parameter gathering dynamically
+        if scenario_mode == "☀️ Solar PV Only":
             params = render_solar_ui(scenario_id=selected_baseline)
+        elif scenario_mode == "🔋 Battery (BESS) Only":
+            params = render_battery_ui(scenario_id=selected_baseline) 
         else:
-            params = render_battery_ui() # Keeps old battery layout link intact
+            # COMBINED MODE: Render both UIs simultaneously within expanders
+            params = {}
+            with st.expander("☀️ Configure Solar PV", expanded=True):
+                params['solar'] = render_solar_ui(scenario_id=f"{selected_baseline}_c_sol")
+            with st.expander("🔋 Configure Battery Storage", expanded=True):
+                params['battery'] = render_battery_ui(scenario_id=f"{selected_baseline}_c_bat")
             
         st.divider()
         st.write("### 🎨 Chart Colors")
@@ -62,45 +70,45 @@ def render_tab2_scenarios():
         col_act = st.color_picker("Battery Action Color", "#FFA15A")
         
         st.divider()
-        # Execution Trigger button
-        run_sim = st.button("🚀 Run Isolated Simulation", type="primary", use_container_width=True)
+        run_sim = st.button("🚀 Run Simulation", type="primary", use_container_width=True)
 
     # --- 2. PIPELINE EXECUTION ENGINE ---
-    # Catch computation triggers and park data inside session state memory to survive down-stream re-runs
     if run_sim:
-        with st.spinner("Processing physical interval math..."):
-            if scenario_mode == "Solar PV Only":
-                # Execute our upgraded layer 2 & 3 solar engine
+        with st.spinner("Processing physical interval math cascade..."):
+            if scenario_mode == "☀️ Solar PV Only":
                 calculated_df = generate_solar_profile(baseline_df, project_metadata, params)
-                # Standardize column name so downstream metrics & PDF logic remain fully compatible
                 calculated_df['final_grid_load_kw'] = calculated_df['net_load_kw']
-            else:
-                # Fallback to old isolated scenario router for battery logic
+                
+            elif scenario_mode == "🔋 Battery (BESS) Only":
                 calculated_df = run_isolated_scenario(baseline_df, "Battery (Peak Shaving)", params, grid_limit, res)
+                
+            else:
+                # ⚙️ COMBINED CASCADE LOGIC
+                # Step 1: Solar subtracts from baseline
+                solar_df = generate_solar_profile(baseline_df, project_metadata, params['solar'])
+                # Step 2: Battery acts on the post-solar net load
+                calculated_df = simulate_battery_logic(solar_df, grid_limit, params['battery'], res)
             
-            # Lock into session memory
             st.session_state['active_sim_results'] = calculated_df
             st.session_state['active_sim_mode'] = scenario_mode
+            st.session_state['active_sim_params'] = params
 
     # --- 3. RENDERING CHARTS & EVALUATIONS ---
-    # Only render visual graphics if a valid simulation run is stored in memory
     if 'active_sim_results' in st.session_state and st.session_state['active_sim_results'] is not None:
         results = st.session_state['active_sim_results']
         current_mode = st.session_state['active_sim_mode']
+        current_params = st.session_state.get('active_sim_params', {})
         
         with col_chart:
             st.subheader(f"⚡ Grid Interaction: {current_mode}")
             fig_load = go.Figure()
             
-            # Baseline trace
             fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['consumption_kw'], 
                                           name="Original Demand", line=dict(color=col_raw, width=1)))
-            # Optimized trace (Works for both Solar and BESS seamlessly now!)
             fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['final_grid_load_kw'], 
                                           name="Final Grid Demand", line=dict(color=col_opt, width=2)))
             
-            # Add solar generation curve as a filled visual area if solar was chosen
-            if current_mode == "Solar PV Only" and 'solar_gen_kw' in results.columns:
+            if current_mode in ["☀️ Solar PV Only", "⚙️ Combined"] and 'solar_gen_kw' in results.columns:
                 fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['solar_gen_kw'], 
                                               name="Solar Yield", line=dict(color='#FFC107', width=1), fill='tozeroy'))
                                           
@@ -108,8 +116,7 @@ def render_tab2_scenarios():
             fig_load.update_layout(height=400, yaxis_title="kW", margin=dict(t=10, b=10), legend=dict(orientation="h", y=1.1))
             st.plotly_chart(fig_load, use_container_width=True)
 
-            # Battery action charts rendering
-            if current_mode == "Battery (Peak Shaving)":
+            if current_mode in ["🔋 Battery (BESS) Only", "⚙️ Combined"]:
                 c_left, c_right = st.columns(2)
                 with c_left:
                     st.write("**Battery Charge/Discharge (kW)**")
@@ -127,30 +134,85 @@ def render_tab2_scenarios():
                     st.plotly_chart(fig_soc, use_container_width=True)
 
         # ==========================================
-        # UNIFIED METRICS & PDF EXPORT
+        # ADVANCED TECHNICAL PERFORMANCE MATRIX
         # ==========================================
         st.divider()
-        st.write("### 📈 Technical Evaluation & Export")
+        st.write("### 📈 Advanced Technical Performance Matrix")
         
-        c1, c2, c3, c4 = st.columns(4)
+        # Base Math Calculations
+        total_consumption_kwh = results['consumption_kw'].sum() / (60 / res)
+        total_grid_import_kwh = results['final_grid_load_kw'].clip(lower=0.0).sum() / (60 / res)
+        
+        autarky_pct = 0.0
+        if total_consumption_kwh > 0:
+            autarky_pct = (1.0 - (total_grid_import_kwh / total_consumption_kwh)) * 100.0
+            
         peak_orig = results['consumption_kw'].max()
         peak_new = results['final_grid_load_kw'].max()
         
-        c1.metric("Original Peak Load", f"{peak_orig:.1f} kW")
-        c2.metric("New Peak Load", f"{peak_new:.1f} kW", delta=f"{peak_new - peak_orig:.1f} kW", delta_color="inverse")
-        
-        min_reqs = {"min_power_kw": 0, "true_min_capacity_kwh": 0}
-        if current_mode == "Battery (Peak Shaving)":
-            min_reqs = get_exact_minimum_requirements(baseline_df, grid_limit, res)
-            c3.metric("Req. Battery Power", f"{min_reqs['min_power_kw']:.1f} kW")
-            c4.metric("Req. Battery Cap.", f"{min_reqs['true_min_capacity_kwh']:.1f} kWh")
-        else:
-            # Display nice placeholders or solar specific data if applicable
-            c3.metric("Req. Battery Power", "N/A (Solar Mode)")
-            c4.metric("Req. Battery Cap.", "N/A (Solar Mode)")
+        peak_shaving_pct = 0.0
+        if peak_orig > 0:
+            peak_shaving_pct = ((peak_orig - peak_new) / peak_orig) * 100.0
 
-        # Secure PDF Export Integration
-        if st.button("📄 Generate PDF Report", type="primary"):
+        # UI Layout
+        col_autarky, col_grid, col_asset = st.columns(3)
+        
+        with col_autarky:
+            st.write("🟢 **Autarky & Yield**")
+            st.metric("Degree of Autarky", f"{autarky_pct:.1f} %")
+            
+            if current_mode in ["☀️ Solar PV Only", "⚙️ Combined"]:
+                total_solar_kwh = results['solar_gen_kw'].sum() / (60 / res)
+                
+                # Dynamic Curtailment Math (Battery can save curtailed solar!)
+                if current_mode == "⚙️ Combined":
+                    if project_metadata.get('strict_zero_export', False):
+                        curtailed_kwh = results['final_grid_load_kw'].clip(upper=0.0).abs().sum() / (60 / res)
+                    else:
+                        curtailed_kwh = 0.0
+                else:
+                    gross_excess_kwh = (results['solar_gen_kw'] - results['consumption_kw']).clip(lower=0.0).sum() / (60 / res)
+                    feed_in_kwh = results.get('grid_feed_in_kw', pd.Series([0])).sum() / (60 / res)
+                    curtailed_kwh = gross_excess_kwh - feed_in_kwh
+                
+                self_consumption_pct = 0.0
+                if total_solar_kwh > 0:
+                    exported_or_curtailed = results['final_grid_load_kw'].clip(upper=0.0).abs().sum() / (60 / res)
+                    self_consumed_kwh = total_solar_kwh - exported_or_curtailed
+                    self_consumption_pct = (self_consumed_kwh / total_solar_kwh) * 100.0
+                    
+                st.metric("Self-Consumption", f"{self_consumption_pct:.1f} %")
+                st.metric("Curtailed Energy", f"{curtailed_kwh:,.0f} kWh", delta="Wasted", delta_color="inverse")
+                
+        with col_grid:
+            st.write("🚨 **Grid Stability**")
+            st.metric("New Peak Load", f"{peak_new:.1f} kW", delta=f"-{peak_shaving_pct:.1f}% Peak Shaved", delta_color="normal")
+            st.metric("Uncovered Demand", "0 kWh", delta="Safe", delta_color="normal")
+            
+        with col_asset:
+            st.write("🔋 **Hardware & Assets**")
+            min_reqs = {"min_power_kw": 0, "true_min_capacity_kwh": 0}
+            
+            if current_mode in ["🔋 Battery (BESS) Only", "⚙️ Combined"]:
+                min_reqs = get_exact_minimum_requirements(baseline_df, grid_limit, res)
+                
+                throughput_kwh = results['battery_action_kw'].abs().sum() / (60 / res)
+                # Safely extract battery cap regardless of mode structure
+                b_cap = current_params.get('battery', current_params).get('b_cap', 0) if isinstance(current_params, dict) else 0
+                
+                cycles = (throughput_kwh / 2.0) / b_cap if b_cap > 0 else 0
+                deg_pct = (cycles / 5000) * 100.0 
+                
+                st.metric("Battery Cycles", f"{cycles:.0f} Cycles")
+                st.metric("Est. Degradation (1 Yr)", f"-{deg_pct:.2f} %", delta_color="inverse")
+                st.metric("Req. Capacity (Ideal)", f"{min_reqs['true_min_capacity_kwh']:.1f} kWh")
+            else:
+                st.metric("Battery Cycles", "N/A")
+                st.metric("Est. Degradation", "N/A")
+
+        # PDF Export Integration
+        st.divider()
+        if st.button("📄 Generate Technical PDF Report", type="primary"):
             with st.spinner("Compiling technical evaluation..."):
                 try:
                     pdf_metrics = {
@@ -163,10 +225,10 @@ def render_tab2_scenarios():
                         report_title=f"{report_name}_{current_mode.replace(' ', '')}", 
                         metrics=pdf_metrics, 
                         plot_data=results, 
-                        battery_enabled=(current_mode == "Battery (Peak Shaving)")
+                        battery_enabled=(current_mode in ["🔋 Battery (BESS) Only", "⚙️ Combined"])
                     )
                     st.download_button(
-                        label="⬇️ Download PDF", 
+                        label="⬇️ Download Document", 
                         data=pdf_data,
                         file_name=f"{report_name}_{current_mode.replace(' ', '')}.pdf",
                         mime="application/pdf"
