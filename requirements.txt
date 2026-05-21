@@ -4,3 +4,6 @@ plotly
 numpy
 weasyprint
 matplotlib
+folium
+streamlit-folium
+requests
