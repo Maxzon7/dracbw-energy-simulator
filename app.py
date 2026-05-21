@@ -29,6 +29,22 @@ def main():
     # Initialize translation data store within session state
     if 'translations' not in st.session_state:
         st.session_state['translations'] = load_translations()
+    
+    # --- HIER EINFÜGEN: Initialize Scenario Vault ---
+    if 'scenario_vault' not in st.session_state:
+        st.session_state['scenario_vault'] = {} # Dictionary to hold our ScenarioConfig objects
+        
+    if 'active_scenario_name' not in st.session_state:
+        st.session_state['active_scenario_name'] = None # Tracks which scenario is currently loaded
+        
+    if 'ui_slider_states' not in st.session_state:
+        # A temporary dictionary to hold live slider movements before they are saved
+        st.session_state['ui_slider_states'] = {
+            'global': {},
+            'monthly': {},
+            'anomalies': []
+        }
+    # --- ENDE EINFÜGEN ---
 
     # --- LANGUAGE SELECTION ---
     st.sidebar.title("⚙️ Settings")

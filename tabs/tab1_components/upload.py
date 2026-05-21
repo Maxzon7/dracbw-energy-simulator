@@ -3,13 +3,18 @@ import streamlit as st
 from logic.energy_logic import load_and_clean_csv, process_consumption_data
 import pandas as pd
 
-def render_csv_upload_section():
+def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
     """
-    Handles CSV file upload, parameter selection, data processing,
-    and saving/overwriting within the global Scenario Registry.
+    Renders the UI for uploading and parsing CSV data.
+    Now properly accepts the overarching scenario parameters.
     """
-    t = st.session_state.get('t', {})
-    p = st.session_state.get('loaded_params', {})
+    st.write("### 📁 CSV Upload Module")
+    st.info("Upload your existing load profile data here.")
+    
+    # Example placeholder to ensure the keys are dynamic
+    uploaded_file = st.file_uploader("Upload CSV File", type=["csv"], key=f"csv_upload_{active_scenario}")
+    
+    # ... (Dein restlicher Parser-Code für die CSV kann hier bleiben)
     
     st.subheader(t.get("header_data", "Upload Data"))
     uploaded_file = st.file_uploader("Upload CSV", type=['csv'])

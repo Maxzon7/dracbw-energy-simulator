@@ -90,6 +90,7 @@ def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, inter
     virtual_soc = 0.0
     min_soc_reached = 0.0
     
+    
     for power_diff in diff:
         if power_diff > 0: 
             # Deficit: We need energy from the battery
