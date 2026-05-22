@@ -1,9 +1,52 @@
 # tabs/tab1_components/manual_components/generation_logic.py
 import streamlit as st
 import pandas as pd
+import numpy as np
 import datetime
 from tabs.tab1_components.synthetic_load import synthetic_load
 from data_models.scenarios import BaselineScenario
+
+def generate_synthetic_profile(days: int, resolution_min: int, base_load: float, peak_load: float) -> pd.DataFrame:
+    """
+    Generiert ein einfaches synthetisches Lastprofil basierend auf Tagen, 
+    Auflösung (Minuten), Grundlast und Spitzenlast.
+    """
+    # 1. Startzeitpunkt definieren (z. B. fiktiver Start 2026)
+    start_date = "2026-01-01 00:00:00"
+    
+    # 2. Enddatum berechnen (exakt nach X Tagen minus einem Intervall)
+    end_date = pd.to_datetime(start_date) + pd.Timedelta(days=days) - pd.Timedelta(minutes=resolution_min)
+    
+    # 3. Zeitstempel (Timestamps) in der gewünschten Auflösung generieren
+    timestamps = pd.date_range(start=start_date, end=end_date, freq=f"{resolution_min}min")
+    df = pd.DataFrame({'timestamp': timestamps})
+    
+    # Hilfsspalten für die Zuweisung von Tag und Nacht
+    df['hour'] = df['timestamp'].dt.hour
+    df['dayofweek'] = df['timestamp'].dt.dayofweek
+    
+    # 4. Standardmäßig überall erst einmal die Grundlast eintragen
+    profile = np.full(len(df), base_load)
+    
+    # 5. Spitzenlast (peak_load) an Werktagen (Mo-Fr) tagsüber (z.B. 08:00 - 18:00) eintragen
+    work_hours_mask = (df['hour'] >= 8) & (df['hour'] < 18)
+    work_days_mask = df['dayofweek'] < 5 # 0=Mo, ..., 4=Fr
+    active_mask = work_hours_mask & work_days_mask
+    
+    profile[active_mask] = peak_load
+    
+    # 6. Leichtes Rauschen (Noise) hinzufügen für ein realistischeres Bild (±5% Schwankung)
+    noise = np.random.normal(1.0, 0.05, len(profile))
+    profile = profile * noise
+    
+    # Sicherstellen, dass die Werte nicht unter 0 fallen
+    profile = np.clip(profile, a_min=0.0, a_max=None)
+    
+    # 7. Daten dem DataFrame zuweisen und Hilfsspalten löschen
+    df['consumption_kw'] = profile
+    df.drop(columns=['hour', 'dayofweek'], inplace=True)
+    
+    return df
 
 def run_profile_generation(scenario_name, active_scenario, monthly_consumption, days_per_week, 
                            hours_per_day, base_load_pct, num_connections, amperage, 

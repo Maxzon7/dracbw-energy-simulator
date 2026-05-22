@@ -3,7 +3,7 @@
 # tabs/tab1_baseline.py
 import streamlit as st
 from tabs.tab1_components.project_params import render_project_params
-from tabs.tab1_components.manual import render_manual_profile_generator
+from tabs.tab1_components.manual import render_manual_builder
 from tabs.tab1_components.upload import render_csv_upload
 from tabs.tab1_components.chart import render_baseline_chart
 
@@ -101,7 +101,7 @@ def render_tab1_baseline():
     # --- 4. RENDER THE CHOSEN GENERATOR ---
     # We pass the gatekeeper variables down so the sub-modules know what keys to use
     if data_source == 'Manual Profiler':
-        render_manual_profile_generator(active_scenario, is_edit_mode, p)
+        render_manual_builder(active_scenario, is_edit_mode, p)
     else:
         render_csv_upload(active_scenario, is_edit_mode, p)
         

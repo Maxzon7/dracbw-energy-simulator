@@ -26,52 +26,53 @@ def load_and_clean_csv(file_obj) -> pd.DataFrame:
     df = pd.read_csv(file_obj, sep=None, engine='python', skiprows=skip_rows)
     return df
 
-def process_consumption_data(df: pd.DataFrame, interval_minutes: int) -> pd.DataFrame:
+def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: str = None, power_col: str = None, unit: str = "W") -> pd.DataFrame:
     """
     Standardizes the raw meter data into the required simulation format.
-    Dynamically maps available columns to the required 'timestamp' and 'consumption_kw'.
+    Dynamically maps available columns or uses user-selected columns from the popup dialog.
     """
-    time_col = None
-    power_col = None
-    
-    # Define acceptable variations of column names for robustness
-    possible_time_cols = ['Time', 'time', 'timestamp', 'Datum', 'Date']
-    possible_power_cols = ['Totaal_Vermogen_(System_Power)', 'WATT_TOT', 'Total_Power', 'System_Power']
-    
-    # Search for the correct columns in the dataframe
-    for col in df.columns:
-        # Strip whitespaces just in case the CSV is messy
-        clean_col = str(col).strip()
-        if clean_col in possible_time_cols:
-            time_col = col
-        if clean_col in possible_power_cols:
-            power_col = col
+    # Falls keine Spalten übergeben wurden, starte die automatische Erkennung (Fallback)
+    if not time_col or not power_col:
+        possible_time_cols = ['Time', 'time', 'timestamp', 'Datum', 'Date', 'zeit', 'datum']
+        possible_power_cols = ['Totaal_Vermogen_(System_Power)', 'WATT_TOT', 'Total_Power', 'System_Power', 'consumption_kw', 'leistung']
+        
+        for col in df.columns:
+            clean_col = str(col).strip()
+            if not time_col and clean_col in possible_time_cols:
+                time_col = col
+            if not power_col and clean_col in possible_power_cols:
+                power_col = col
             
     if not time_col or not power_col:
-        raise ValueError("Required columns for Time or Power not found. Please ensure the CSV contains a recognized time and total power column.")
+        raise ValueError("Erforderliche Spalten für Zeit oder Leistung nicht gefunden. Bitte nutze die manuelle Zuordnung im Popup.")
         
     try:
-        # Extract only the necessary data
+        # Extrahiere die vom Nutzer gewählten Spalten
         df_clean = df[[time_col, power_col]].copy()
         df_clean.columns = ['timestamp', 'consumption_kw']
     except Exception as e:
-        raise ValueError(f"Error extracting data columns: {e}")
+        raise ValueError(f"Fehler bei der Spaltenextraktion: {e}")
     
-    # Ensure numeric types and convert from Watts to Kilowatts (kW)
-    # Using errors='coerce' forces invalid text (like 'NaN') into true Null values
-    df_clean['consumption_kw'] = pd.to_numeric(df_clean['consumption_kw'], errors='coerce') / 1000.0 
+    # Bereinigung europäischer Komma-Zahlen (z.B. "12,5" -> "12.5")
+    if df_clean['consumption_kw'].dtype == object:
+        df_clean['consumption_kw'] = df_clean['consumption_kw'].astype(str).str.replace(',', '.')
+        
+    # In numerische Werte umwandeln
+    df_clean['consumption_kw'] = pd.to_numeric(df_clean['consumption_kw'], errors='coerce')
     
-    # Parse timestamps dynamically
+    # Einheiten-Umrechnung: Wenn die Daten in Watt (W) vorliegen, teile durch 1000 für kW
+    if unit == "W":
+        df_clean['consumption_kw'] = df_clean['consumption_kw'] / 1000.0 
+    
+    # Zeitstempel parsen
     df_clean['timestamp'] = pd.to_datetime(df_clean['timestamp'], errors='coerce')
     
-    # Remove any rows where time or consumption could not be read
+    # Fehlerhafte Zeilen löschen
     df_clean.dropna(subset=['timestamp', 'consumption_kw'], inplace=True)
     df_clean.set_index('timestamp', inplace=True)
     
-    # Resample the data to the desired interval (e.g., 15 minutes)
+    # Auf das gewünschte Intervall resampeln
     resample_rule = f"{interval_minutes}min"
-    
-    # numeric_only=True prevents pandas warnings when averaging
     return df_clean.resample(resample_rule).mean(numeric_only=True).reset_index().dropna()
 
 def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, interval_min: int) -> dict:
