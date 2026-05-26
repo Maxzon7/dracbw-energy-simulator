@@ -6,4 +6,5 @@ weasyprint
 matplotlib
 folium
 streamlit-folium
-requests
+request
+pyarrow

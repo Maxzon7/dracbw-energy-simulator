@@ -8,6 +8,7 @@ import os
 from tabs.tab1_baseline import render_tab1_baseline
 from tabs.tab2_scenarios import render_tab2_scenarios
 from tabs.tab3_comparison import render_tab3_comparison
+from tabs.tab4_control_center import render_tab4_control_center
 
 def load_translations() -> dict:
     """
@@ -68,23 +69,24 @@ def main():
     
     with st.expander(t["info_title"]):
         st.write(t["info_text"])
-
-    # --- TAB NAVIGATION ---
-    tab1, tab2, tab3 = st.tabs([
-        t["tab_baseline"], 
-        t["tab_scenarios"], 
-        t["tab_comparison"]
-    ])
     
-    # Route execution to tabs without explicitly passing translation dictionaries
+    #tab Navigation
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Baseline", 
+        "Scenarios", 
+        "Comparison",
+        "Control Center" # Neuer Tab!
+    ])
+
+    #route execuition
     with tab1:
         render_tab1_baseline()
-        
     with tab2:
         render_tab2_scenarios()
-        
     with tab3:
         render_tab3_comparison()
+    with tab4:
+        render_tab4_control_center()
 
 if __name__ == "__main__":
     main()
