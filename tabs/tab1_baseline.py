@@ -14,8 +14,8 @@ def render_tab1_baseline():
     """
     t = st.session_state.get('t', {})
     
-    if 'scenario_registry' not in st.session_state:
-        st.session_state['scenario_registry'] = {}
+    if 'scenario_vault' not in st.session_state:
+        st.session_state['scenario_vault'] = {}
 
     st.header("🏢 Baseline Configuration")
     st.write("Choose whether to build a fresh configuration or edit a previously stored scenario.")
@@ -27,18 +27,18 @@ def render_tab1_baseline():
         horizontal=True
     )
     
-    active_scenario = f"New_Scenario_{len(st.session_state['scenario_registry']) + 1}"
+    active_scenario = f"New_Scenario_{len(st.session_state['scenario_vault']) + 1}"
     is_edit_mode = False
 
     if mode == "✏️ Edit an Existing Scenario":
-        if not st.session_state['scenario_registry']:
+        if not st.session_state['scenario_vault']:
             st.warning("The registry is currently empty. Please create and save a new scenario first.")
             st.session_state['last_loaded_registry_name'] = None
             st.session_state['loaded_params'] = {}
             st.session_state['current_anomalies'] = []
             st.session_state['loaded_data_source'] = "Manual Profiler"
         else:
-            options = list(st.session_state['scenario_registry'].keys())
+            options = list(st.session_state['scenario_vault'].keys())
             selected_scenario = st.selectbox("Select Stored Scenario to Load:", options)
             
             # Trigger state sync if selection changed
@@ -46,7 +46,7 @@ def render_tab1_baseline():
                 st.session_state['last_loaded_registry_name'] = selected_scenario
                 
                 # Pull stored parameters into session state memory
-                registry_item = st.session_state['scenario_registry'][selected_scenario]
+                registry_item = st.session_state['scenario_vault'][selected_scenario]
                 st.session_state['loaded_params'] = registry_item.get('params', {})
                 st.session_state['current_anomalies'] = list(registry_item.get('anomalies', []))
                 st.session_state['loaded_data_source'] = registry_item.get('data_source', 'Manual Profiler')

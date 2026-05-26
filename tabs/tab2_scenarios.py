@@ -22,14 +22,14 @@ def render_tab2_scenarios():
     st.header("Scenario Simulation (Hardware Integration)")
     
     # --- 1. BASELINE SELECTION ---
-    if 'scenario_registry' not in st.session_state or not st.session_state['scenario_registry']:
+    if 'scenario_vault' not in st.session_state or not st.session_state['scenario_vault']:
         st.warning("⚠️ Please generate and save a Baseline in Tab 1 first.")
         return
         
-    saved_scenarios = list(st.session_state['scenario_registry'].keys())
+    saved_scenarios = list(st.session_state['scenario_vault'].keys())
     selected_baseline = st.selectbox("📂 1. Select Base Profile:", saved_scenarios)
     
-    baseline_data = st.session_state['scenario_registry'][selected_baseline]
+    baseline_data = st.session_state['scenario_vault'][selected_baseline]
     baseline_df = baseline_data['df']
     grid_limit = baseline_data['grid_limit']
     project_metadata = baseline_data.get('params', {}).get('project_metadata', {})
