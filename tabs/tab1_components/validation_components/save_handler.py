@@ -21,6 +21,7 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
     if st.button(f"🚀 Securely Save Profile & Continue", type="primary", use_container_width=True, key=f"save_btn_uni_{active_scenario}"):
         st.session_state['filtered_data'] = df
         st.session_state['active_scenario_name'] = scenario_name
+        st.session_state['manual_df_ready'] = False # FIX: Anker einholen, Speichern war erfolgreich!
         
         if 'scenario_vault' not in st.session_state:
             st.session_state['scenario_vault'] = {}
