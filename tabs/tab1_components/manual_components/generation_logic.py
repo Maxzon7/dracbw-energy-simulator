@@ -48,12 +48,12 @@ def generate_synthetic_profile(days: int, resolution_min: int, base_load: float,
     
     return df
 
-def run_profile_generation(scenario_name, active_scenario, monthly_consumption, days_per_week, 
+def run_profile_generation(monthly_consumption, days_per_week, 
                            hours_per_day, base_load_pct, num_connections, amperage, 
                            enable_noise, noise_percentage, use_custom_months, monthly_configs, calculated_grid_kw):
     """
-    Executes the 34,560 interval generation loop, injects advanced anomalies, 
-    and packages results securely into the overarching application registry.
+    Pure Calculation Engine. Takes parameters, returns a 15-minute DataFrame.
+    Does NOT save to session state to prevent architecture collisions.
     """
     baseline = BaselineScenario(
         monthly_consumption = monthly_consumption,
@@ -117,33 +117,5 @@ def run_profile_generation(scenario_name, active_scenario, monthly_consumption, 
                 
         annual_df.drop(columns=['time_only', 'date_str', 'day_name'], inplace=True)
     
-    # 3. Save directly to Active Session State (For current Charts)
-    baseline.load_profile = annual_df
-    st.session_state['baseline_scenario'] = baseline
-    st.session_state['filtered_data'] = annual_df
-    st.session_state['grid_limit'] = calculated_grid_kw
-    
-    # 4. Save structured metadata package to Scenario Registry
-    st.session_state['scenario_registry'][scenario_name] = {
-        "df": annual_df,
-        "grid_limit": calculated_grid_kw,
-        "anomalies": list(st.session_state.get('current_anomalies', [])),
-        "data_source": st.session_state.get('current_data_source', 'Manual Profiler'),
-        "params": {
-            "project_metadata": st.session_state.get('current_project_metadata', {}),
-            "monthly_consumption": monthly_consumption,
-            "days_per_week": days_per_week,
-            "hours_per_day": hours_per_day,
-            "base_load_pct": base_load_pct,
-            "num_connections": num_connections,
-            "amperage": amperage,
-            "enable_noise": enable_noise,
-            "noise_percentage": noise_percentage,
-            "use_custom_months": use_custom_months,
-            "monthly_configs": monthly_configs
-        }
-    }
-    
-    # Synchronize tracking states
-    st.session_state['last_loaded_registry_name'] = scenario_name
-    st.session_state['loaded_params'] = st.session_state['scenario_registry'][scenario_name]['params']
+
+    return annual_df
