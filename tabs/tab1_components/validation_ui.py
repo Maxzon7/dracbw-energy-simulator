@@ -2,12 +2,14 @@
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
+import numpy as np
 
 def render_validation_dashboard(df: pd.DataFrame, params: dict, active_scenario: str, is_edit_mode: bool):
     """
     UNIFIED VALIDATION ENGINE (The "Funnel")
     Takes finalized, standardized load profile data (manual or CSV) 
-    and renders an identical UX surface for validation, charting, and storage.
+    and renders an identical UX surface with advanced tabbed multi-resolution charting,
+    grid violation accounting, and automated data logging.
     """
     # Safely unpack core parameters
     grid_limit = params.get('grid_limit', 50.0)
@@ -18,29 +20,49 @@ def render_validation_dashboard(df: pd.DataFrame, params: dict, active_scenario:
     st.divider()
     st.write("### ⚡ 3. Baseline Load Profile Validation")
     
-    # 1. Mathematical KPI Calculation
-    intervals_per_hour = 60 / res
-    total_energy_kwh = df['consumption_kw'].sum() / intervals_per_hour
+    # Ensure correct datetime index/column format
+    if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce')
+    
+    # 1. Advanced Grid Breach Analytics
+    hours_factor = res / 60.0
+    
+    total_energy_kwh = df['consumption_kw'].sum() * hours_factor
     peak_load = df['consumption_kw'].max()
     avg_load = df['consumption_kw'].mean()
     
-    # 2. Universal 4-Column KPI Layout
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Resolution", f"{res} min")
-    col2.metric("Peak Load", f"{peak_load:.1f} kW")
-    col3.metric("Total Load", f"{total_energy_kwh:,.0f} kWh")
-    col4.metric("Avg Base Load", f"{avg_load:.1f} kW")
+    # Calculate exact grid limit violations
+    breach_mask = df['consumption_kw'] > grid_limit
+    breach_df = df[breach_mask]
+    hours_over_limit = len(breach_df) * hours_factor
+    exceeded_energy_kwh = ((breach_df['consumption_kw'] - grid_limit) * hours_factor).sum()
+    
+    # 2. Universal KPI Layout (Expanded to 6 Metrics via 2 rows)
+    st.write("#### 📊 System Performance Indicators")
+    m_row1_1, m_row1_2, m_row1_3 = st.columns(3)
+    m_row1_1.metric("Data Resolution", f"{res} min")
+    m_row1_2.metric("Maximum Peak Load", f"{peak_load:.1f} kW")
+    m_row1_3.metric("Total Annual Energy", f"{total_energy_kwh:,.0f} kWh")
+    
+    m_row2_1, m_row2_2, m_row2_3 = st.columns(3)
+    m_row2_1.metric("Average Base Load", f"{avg_load:.1f} kW")
+    
+    # Color code grid violation impact metrics to draw consulting attention
+    if hours_over_limit > 0:
+        m_row2_2.metric("Grid Limit Overload Duration", f"{hours_over_limit:,.1f} Hours", delta=f"{len(breach_df)} intervals", delta_color="inverse")
+        m_row2_3.metric("Total Overload Energy Deficit", f"{exceeded_energy_kwh:,.0f} kWh", delta="Requires Storage", delta_color="inverse")
+    else:
+        m_row2_2.metric("Grid Limit Overload Duration", "0.0 Hours", delta="No Breaches")
+        m_row2_3.metric("Total Overload Energy Deficit", "0 kWh", delta="Grid Safe")
 
     # ==========================================
     # --- CHAMELEON DASHBOARD: ADVANCED METRICS ---
     # ==========================================
-    # Check if the data came from the manual generator (has the metadata backpack)
     if params.get("is_manual", False):
         st.divider()
         st.write("### 🔍 Advanced Scenario Assumptions")
         st.info("The following parameters define the structural and behavioral baseline of this synthetic profile.")
         
-        # --- 1. Grid Connection Check ---
         st.write("#### 1. Infrastructure vs. Simulated Peak")
         calc_limit = params.get("calculated_grid_kw", 0.0)
         
@@ -55,22 +77,17 @@ def render_validation_dashboard(df: pd.DataFrame, params: dict, active_scenario:
             else:
                 st.success("✅ Capacity Sufficient: Peak remains within physical grid limits.")
                 
-        # --- 2. Anomaly Gallery ---
         anomalies_list = params.get("anomalies", [])
         if anomalies_list:
             st.write("#### 2. Injected Profile Events (Anomalies)")
-            
-            # Build a clean list of dictionaries for the dataframe display
             anomaly_data = []
             for a in anomalies_list:
-                # Handle potential attribute access safely
                 a_type = getattr(a, 'anomaly_type', a.get('anomaly_type', 'N/A')) if isinstance(a, dict) else a.anomaly_type
                 a_val = getattr(a, 'value_kw', a.get('value_kw', 0)) if isinstance(a, dict) else a.value_kw
                 a_freq = getattr(a, 'frequency_type', a.get('frequency_type', 'N/A')) if isinstance(a, dict) else a.frequency_type
                 a_start = getattr(a, 'start_time', a.get('start_time', 'N/A')) if isinstance(a, dict) else a.start_time
                 a_end = getattr(a, 'end_time', a.get('end_time', 'N/A')) if isinstance(a, dict) else a.end_time
                 
-                # Format the type for professional display
                 type_label = {
                     "additional_load": "Additional Peak (+)", 
                     "fixed_value": "Fixed Load (=)", 
@@ -83,54 +100,140 @@ def render_validation_dashboard(df: pd.DataFrame, params: dict, active_scenario:
                     "Frequency Pattern": str(a_freq).capitalize(),
                     "Time Window": f"{a_start} - {a_end}"
                 })
-                
             st.dataframe(pd.DataFrame(anomaly_data), use_container_width=True, hide_index=True)
 
-        # --- 3. Base Configuration Fingerprint ---
         with st.expander("⚙️ View General Configuration Fingerprint"):
             f_col1, f_col2, f_col3 = st.columns(3)
             f_col1.write(f"**Base Load Level:** {params.get('base_load_pct', 0)}%")
             f_col2.write(f"**Working Hours:** {params.get('hours_per_day', 0)}h / {params.get('days_per_week', 0)} Days")
             noise_status = f"Enabled ({params.get('noise_percentage', 0)}%)" if params.get('enable_noise', False) else "Disabled"
             f_col3.write(f"**Signal Noise:** {noise_status}")
-            
             if params.get('use_custom_months', False):
                 st.caption("Note: Custom monthly variations are active for this profile.")
     # ==========================================
 
     st.divider()
     
-    # 3. Universal Anomaly Scanner (Z-Score Logic)
-    # Searches for statistical outliers deviating more than 3 standard deviations from the mean
+    # 3. Statistical Outlier Scanner (Z-Score)
     std_dev = df['consumption_kw'].std()
     z_scores = (df['consumption_kw'] - avg_load) / std_dev if std_dev > 0 else 0
     statistical_anomalies = df[z_scores > 3.0] 
     
     if not statistical_anomalies.empty:
-        st.warning(f"⚠️ {len(statistical_anomalies)} unusual load peaks detected. Please verify in the chart below.")
+        st.warning(f"⚠️ {len(statistical_anomalies)} unusual load peaks detected. Verify grid exposure in charts below.")
     else:
         st.success("✅ Profile validated. No extreme statistical anomalies detected.")
         
-    # 4. Universal Interactive Chart
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df['timestamp'], y=df['consumption_kw'], 
-        mode='lines', line=dict(color=col_raw, width=1), 
-        name=f'Client Load ({data_source})'
-    ))
+    # 4. MULTI-RESOLUTION INTERACTIVE CHARTING STATION (Tabs System)
+    st.write("#### 📈 Multi-Resolution Profile Analytics")
+    tab_full, tab_month, tab_week = st.tabs(["📊 Full Horizon Timeline", "📅 Monthly Segment Deep-Dive", "🔄 Typical Weekly Heartbeat"])
     
-    # Mark detected anomalies with red crosses in the chart
-    if not statistical_anomalies.empty:
-        fig.add_trace(go.Scatter(
-            x=statistical_anomalies['timestamp'], y=statistical_anomalies['consumption_kw'],
-            mode='markers', marker=dict(color='red', size=8, symbol='x'),
-            name='Statistical Anomalies'
+    # --- TAB 1: FULL HORIZON ---
+    with tab_full:
+        fig_full = go.Figure()
+        fig_full.add_trace(go.Scatter(
+            x=df['timestamp'], y=df['consumption_kw'], 
+            mode='lines', line=dict(color=col_raw, width=1), 
+            name=f'Client Load ({data_source})'
+        ))
+        if not statistical_anomalies.empty:
+            fig_full.add_trace(go.Scatter(
+                x=statistical_anomalies['timestamp'], y=statistical_anomalies['consumption_kw'],
+                mode='markers', marker=dict(color='red', size=6, symbol='x'),
+                name='Outliers (>3 StdDev)'
+            ))
+        fig_full.add_hline(y=grid_limit, line_dash="dash", line_color="red", annotation_text="Grid Limit")
+        fig_full.update_layout(height=400, margin=dict(l=0, r=0, t=20, b=0), yaxis_title="Power (kW)", hovermode="x unified")
+        st.plotly_chart(fig_full, use_container_width=True)
+        
+    # --- TAB 2: MONTHLY DEEP-DIVE ---
+    with tab_month:
+        month_names = {
+            1: "January", 2: "February", 3: "March", 4: "April", 5: "May", 6: "June",
+            7: "July", 8: "August", 9: "September", 10: "October", 11: "November", 12: "December"
+        }
+        df['month_idx'] = df['timestamp'].dt.month
+        available_months = sorted(df['month_idx'].unique())
+        
+        sel_month_idx = st.selectbox("Select Target Month for Analysis", available_months, 
+                                     format_func=lambda x: month_names.get(x, f"Month {x}"))
+        
+        sub_df_month = df[df['month_idx'] == sel_month_idx].copy()
+        
+        fig_month = go.Figure()
+        # Invisible baseline at grid limit for filling threshold breaches
+        fig_month.add_trace(go.Scatter(
+            x=sub_df_month['timestamp'], y=[grid_limit] * len(sub_df_month),
+            line=dict(width=0), showlegend=False, hoverinfo='skip'
+        ))
+        # Exceeded load filled area (Glowing Breach)
+        fig_month.add_trace(go.Scatter(
+            x=sub_df_month['timestamp'], y=np.maximum(sub_df_month['consumption_kw'], grid_limit),
+            fill='tonexty', fillcolor='rgba(255, 65, 54, 0.35)', 
+            line=dict(width=0), name='Grid Overload Area'
+        ))
+        # Actual client load profile curve
+        fig_month.add_trace(go.Scatter(
+            x=sub_df_month['timestamp'], y=sub_df_month['consumption_kw'], 
+            mode='lines', line=dict(color=col_raw, width=1.5), 
+            name='Client Load'
         ))
         
-    fig.add_hline(y=grid_limit, line_dash="dash", line_color="red", annotation_text="Grid Limit")
-    fig.update_layout(height=400, margin=dict(l=0, r=0, t=30, b=0), yaxis_title="Power (kW)", hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
-    
+        fig_month.add_hline(y=grid_limit, line_dash="dash", line_color="red", annotation_text="Grid Limit")
+        fig_month.update_layout(height=400, margin=dict(l=0, r=0, t=20, b=0), yaxis_title="Power (kW)", hovermode="x unified")
+        st.plotly_chart(fig_month, use_container_width=True)
+        
+    # --- TAB 3: TYPICAL WEEKLY HEARTBEAT ---
+    with tab_week:
+        st.info("This view aggregates all data points across the entire horizon to extract the average weekly business footprint.")
+        
+        df_week = df.copy()
+        df_week['dayofweek'] = df_week['timestamp'].dt.dayofweek # 0=Monday, 6=Sunday
+        df_week['time_key'] = df_week['timestamp'].dt.time
+        
+        # Average identical time slots across the dataset
+        weekly_profile = df_week.groupby(['dayofweek', 'time_key'], as_index=False)['consumption_kw'].mean()
+        
+        # Build synthetic uniform timestamp array starting at a fictional Monday (2026-01-05) for linear time-series plotting
+        monday_start = pd.to_datetime("2026-01-05 00:00:00")
+        weekly_profile['synthetic_timestamp'] = weekly_profile.apply(
+            lambda r: monday_start + pd.Timedelta(days=int(r['dayofweek'])) + pd.Timedelta(hours=r['time_key'].hour, minutes=r['time_key'].minute),
+            axis=1
+        )
+        weekly_profile.sort_values('synthetic_timestamp', inplace=True)
+        
+        fig_week = go.Figure()
+        # Invisible baseline threshold at grid limit
+        fig_week.add_trace(go.Scatter(
+            x=weekly_profile['synthetic_timestamp'], y=[grid_limit] * len(weekly_profile),
+            line=dict(width=0), showlegend=False, hoverinfo='skip'
+        ))
+        # Exceeded load filled area
+        fig_week.add_trace(go.Scatter(
+            x=weekly_profile['synthetic_timestamp'], y=np.maximum(weekly_profile['consumption_kw'], grid_limit),
+            fill='tonexty', fillcolor='rgba(255, 65, 54, 0.35)', 
+            line=dict(width=0), name='Average Overload Area'
+        ))
+        # Normalized average curve
+        fig_week.add_trace(go.Scatter(
+            x=weekly_profile['synthetic_timestamp'], y=weekly_profile['consumption_kw'], 
+            mode='lines', line=dict(color=col_raw, width=2), 
+            name='Mean Weekly Footprint'
+        ))
+        
+        fig_week.add_hline(y=grid_limit, line_dash="dash", line_color="red", annotation_text="Grid Limit")
+        fig_week.update_layout(
+            height=400, margin=dict(l=0, r=0, t=20, b=0), 
+            yaxis_title="Power (kW)", hovermode="x unified"
+        )
+        # Reformat x-axis ticks to display localized weekday names and hours clearly
+        fig_week.update_xaxes(tickformat="%A %H:%M")
+        st.plotly_chart(fig_week, use_container_width=True)
+
+    # Clean temporary helper columns to avoid memory contamination during vault serialization
+    if 'month_idx' in df.columns:
+        df.drop(columns=['month_idx'], inplace=True)
+
     # 5. Global Scenario Vault Integration
     st.divider()
     st.write(f"### 💾 Save {data_source} Scenario")
@@ -145,7 +248,6 @@ def render_validation_dashboard(df: pd.DataFrame, params: dict, active_scenario:
         st.session_state['filtered_data'] = df
         st.session_state['active_scenario_name'] = scenario_name
         
-        # VERY IMPORTANT: Saving to the unified 'scenario_vault'
         if 'scenario_vault' not in st.session_state:
             st.session_state['scenario_vault'] = {}
             
@@ -157,7 +259,6 @@ def render_validation_dashboard(df: pd.DataFrame, params: dict, active_scenario:
             "params": params
         }
         
-        # Reset the popup flag if it was a CSV upload
         if data_source == "CSV":
             st.session_state[f"csv_mapping_ready_{active_scenario}"] = False
             
