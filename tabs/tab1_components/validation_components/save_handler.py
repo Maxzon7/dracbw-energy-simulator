@@ -27,29 +27,29 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
     col_type, col_parent = st.columns(2)
     with col_type:
         save_type = st.radio(
-            "Szenario-Typ:", 
-            options=["Haupt-Szenario (Basis)", "Sub-Szenario (Variante)"],
+            "Scenario Type:", 
+            options=["Main Scenario (Base)", "Sub-Scenario (Variant)"],
             horizontal=True,
             key=f"save_type_{active_scenario}"
         )
         
     parent_scen = None
     with col_parent:
-        if save_type == "Sub-Szenario (Variante)":
+        if save_type == "Sub-Scenario (Variant)":
             if existing_scenarios:
                 # Suggest the currently loaded or edited scenario as default parent
                 suggested_parent = st.session_state.get('last_loaded_registry_name')
                 default_idx = existing_scenarios.index(suggested_parent) if suggested_parent in existing_scenarios else 0
                 
                 parent_scen = st.selectbox(
-                    "Gehört zu Basis-Szenario:", 
+                    "Belongs to Base Scenario:", 
                     options=existing_scenarios,
                     index=default_idx,
                     key=f"parent_select_{active_scenario}"
                 )
             else:
-                st.warning("Keine Basis-Szenarien im Tresor. Wird als Haupt-Szenario gespeichert.")
-                save_type = "Haupt-Szenario (Basis)"
+                st.warning("No base scenarios in the vault. Saving as Main Scenario.")
+                save_type = "Main Scenario (Base)"
 
     # 3. Execution Pipeline
     if st.button(f"🚀 Securely Save Profile & Continue", type="primary", use_container_width=True, key=f"save_btn_uni_{active_scenario}"):
@@ -66,12 +66,12 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
             "grid_limit": grid_limit,
             "anomalies": statistical_anomalies.index.tolist() if not statistical_anomalies.empty else [],
             "data_source": data_source,
-            "parent": parent_scen, # <--- HIER: Die genetische Verknüpfung!
+            "parent": parent_scen,
             "params": params
         }
         
         if data_source == "CSV":
             st.session_state[f"csv_mapping_ready_{active_scenario}"] = False
             
-        st.success(f"✅ Szenario '{scenario_name}' erfolgreich im Tresor gesichert! Du kannst nun fortfahren.")
+        st.success(f"✅ Scenario '{scenario_name}' successfully saved in the vault.")
         st.rerun()

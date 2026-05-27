@@ -11,7 +11,7 @@ def render_tab3_comparison():
     st.write("## ⚖️ Advanced Comparison Suite")
     
     if 'scenario_vault' not in st.session_state or not st.session_state['scenario_vault']:
-        st.warning("Der Tresor ist leer. Bitte erstelle und speichere Szenarien in Tab 1 oder importiere sie in Tab 4.")
+        st.warning("The vault is empty. Please create and save scenarios in Tab 1 or import them in Tab 4.")
         return
         
     vault = st.session_state['scenario_vault']
@@ -19,16 +19,16 @@ def render_tab3_comparison():
     # Filter for root baselines to simplify initial selection
     base_options = [name for name, data in vault.items() if not data.get('parent') or data.get('parent') not in vault]
     
-    st.write("### 🏢 1. Wählen Sie das Basis-Szenario")
-    selected_base = st.selectbox("Haupt-Referenzprofil:", options=base_options)
+    st.write("### 🏢 1. Select the Base Scenario")
+    selected_base = st.selectbox("Main Reference Profile:", options=base_options)
     
     # Autodetect variants
     linked_subs = [name for name, data in vault.items() if data.get('parent') == selected_base]
     
     auto_compare = False
     if linked_subs:
-        st.success(f"🔗 {len(linked_subs)} zugehörige Varianten (Sub-Szenarien) für '{selected_base}' gefunden!")
-        auto_compare = st.checkbox("Alle zugehörigen Sub-Szenarien automatisch mit einblenden", value=True)
+        st.success(f"🔗 Found {len(linked_subs)} associated variants (sub-scenarios) for '{selected_base}'!")
+        auto_compare = st.checkbox("Automatically include all associated sub-scenarios", value=True)
 
     # Multiselect for fully custom comparisons
     all_options = list(vault.keys())
@@ -36,14 +36,14 @@ def render_tab3_comparison():
     if auto_compare:
         default_selection.extend(linked_subs)
         
-    selected_profiles = st.multiselect("Szenarien im aktiven Vergleich:", options=all_options, default=default_selection)
+    selected_profiles = st.multiselect("Scenarios in active comparison:", options=all_options, default=default_selection)
 
     if not selected_profiles:
-        st.warning("Bitte wählen Sie mindestens ein Szenario für den Vergleich aus.")
+        st.warning("Please select at least one scenario for comparison.")
         return
 
     # --- 1. THE VISUAL GRAPH OVERLAY ---
-    st.write("### 📈 Lastprofil-Überlagerung")
+    st.write("### 📈 Load Profile Overlay")
     fig = go.Figure()
     
     for name in selected_profiles:
@@ -62,13 +62,13 @@ def render_tab3_comparison():
                 name=f"🏠 {name} (Base)" if is_base else f"🌿 {name}"
             ))
             
-    fig.update_layout(height=450, margin=dict(l=0, r=0, t=20, b=0), yaxis_title="Leistung (kW)", hovermode="x unified")
+    fig.update_layout(height=450, margin=dict(l=0, r=0, t=20, b=0), yaxis_title="Power (kW)", hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
 
     # --- 2. THE DELTA-KPI SAVINGS ENGINE ---
     if len(selected_profiles) > 1:
-        st.write("### 🧮 Wirtschaftliche Delta-Analyse (Einsparungen)")
-        st.info(f"Alle folgenden Einsparungen beziehen sich auf das gewählte Basis-Referenzprofil: **{selected_base}**")
+        st.write("### 🧮 Economic Delta Analysis (Savings)")
+        st.info(f"All subsequent savings refer to the selected base reference profile: **{selected_base}**")
         
         # Calculate Base values as reference benchmarks
         base_df = vault[selected_base]['df']
@@ -96,11 +96,11 @@ def render_tab3_comparison():
             overload_savings_kwh = base_breach_kwh - sub_breach_kwh
             
             delta_rows.append({
-                "Variante": name,
+                "Variant": name,
                 "Max Peak Load (kW)": f"{sub_peak:.1f} kW",
-                "Spitzenlast-Reduktion (Δ kW)": f"+ {peak_savings:.1f} kW" if peak_savings >= 0 else f"- {abs(peak_savings):.1f} kW",
-                "Netzüberlastung (kWh)": f"{sub_breach_kwh:,.0f} kWh",
-                "Eingesparte Überlast-Energie (Δ kWh)": f"+ {overload_savings_kwh:,.0f} kWh" if overload_savings_kwh >= 0 else f"- {abs(overload_savings_kwh):,.0f} kWh"
+                "Peak Load Reduction (Δ kW)": f"+ {peak_savings:.1f} kW" if peak_savings >= 0 else f"- {abs(peak_savings):.1f} kW",
+                "Grid Overload (kWh)": f"{sub_breach_kwh:,.0f} kWh",
+                "Saved Overload Energy (Δ kWh)": f"+ {overload_savings_kwh:,.0f} kWh" if overload_savings_kwh >= 0 else f"- {abs(overload_savings_kwh):,.0f} kWh"
             })
             
         if delta_rows:

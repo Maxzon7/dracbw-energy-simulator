@@ -240,14 +240,14 @@ def render_tab2_scenarios():
         # --- HARDWARE SUB-SZENARIO SPEICHERN ---
         # ==========================================
         st.divider()
-        st.write("### 💾 Hardware-Variante speichern")
-        st.info("Speichere diese Konfiguration als Sub-Szenario, um sie in Tab 3 direkt mit der Basis zu vergleichen.")
+        st.write("### save this variant")
+        st.info("Save this configuration as Subscenario to compare it with the base and alternative Sub sceanrios.")
         
         # Generiert automatisch einen passenden Namen (z.B. "Basis + Solar")
         default_name = f"{selected_baseline} + {current_mode.split(' ')[1]}" if " " in current_mode else f"{selected_baseline}_Sub"
-        sub_scenario_name = st.text_input("Name für dieses Sub-Szenario:", value=default_name)
+        sub_scenario_name = st.text_input("Name this Sub-Scenario:", value=default_name)
         
-        if st.button("🚀 Variante in den Tresor speichern", type="primary", use_container_width=True):
+        if st.button("put variant in the vault", type="primary", use_container_width=True):
             
             if 'scenario_vault' not in st.session_state:
                 st.session_state['scenario_vault'] = {}
@@ -266,7 +266,5 @@ def render_tab2_scenarios():
                 }
             }
             
-            st.success(f"✅ '{sub_scenario_name}' wurde erfolgreich als Variante von '{selected_baseline}' gespeichert!")
-            
-            # WICHTIG: Kein sofortiger Rerun hier, da sonst die Erfolgsmeldung sofort verschwindet.
-            # Der Tresor ist aktualisiert, das Szenario ist nun in Tab 3 und 4 verfügbar.
+            st.success(f"✅ '{sub_scenario_name}' has been sucessfully saved as a variant of '{selected_baseline}' !")
+    

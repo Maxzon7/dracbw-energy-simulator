@@ -19,9 +19,9 @@ def guess_columns(raw_cols):
             power_col = col
     return time_col, power_col
 
-@st.dialog("📋 CSV-Datei öffnen & Spalten zuordnen", width="large")
+@st.dialog("📋 Open CSV File & Map Columns", width="large")
 def render_csv_mapping_dialog(raw_df, active_scenario):
-    st.write("Hier ist ein Blick in die ersten Zeilen deiner CSV-Datei. Bitte ordne die Spalten zu:")
+    st.write("Here is a preview of the first few rows of your CSV file. Please map the columns:")
     st.dataframe(raw_df.head(5), use_container_width=True)
     
     raw_cols = list(raw_df.columns)
@@ -32,14 +32,14 @@ def render_csv_mapping_dialog(raw_df, active_scenario):
     
     st.divider()
     col_map1, col_map2, col_map3 = st.columns(3)
-    final_time_col = col_map1.selectbox("🕒 Zeit/Datum Spalte", options=raw_cols, index=time_idx, key=f"dlg_time_{active_scenario}")
-    final_power_col = col_map2.selectbox("⚡ Leistung Spalte", options=raw_cols, index=power_idx, key=f"dlg_pwr_{active_scenario}")
-    unit_mode = col_map3.selectbox("📊 Dateneinheit im File", options=["Kilowatt (kW)", "Watt (W)"], index=0, key=f"dlg_unit_{active_scenario}")
+    final_time_col = col_map1.selectbox("🕒 Time/Date Column", options=raw_cols, index=time_idx, key=f"dlg_time_{active_scenario}")
+    final_power_col = col_map2.selectbox("⚡ Power Column", options=raw_cols, index=power_idx, key=f"dlg_pwr_{active_scenario}")
+    unit_mode = col_map3.selectbox("📊 Data Unit in File", options=["Kilowatt (kW)", "Watt (W)"], index=0, key=f"dlg_unit_{active_scenario}")
     
     final_unit = "kW" if "Kilowatt" in unit_mode else "W"
     
     st.divider()
-    if st.button("🤝 Zuordnung bestätigen & Einlesen", type="primary", use_container_width=True, key=f"dlg_confirm_{active_scenario}"):
+    if st.button("🤝 Confirm Mapping & Load Data", type="primary", use_container_width=True, key=f"dlg_confirm_{active_scenario}"):
         st.session_state[f"mapped_time_col_{active_scenario}"] = final_time_col
         st.session_state[f"mapped_power_col_{active_scenario}"] = final_power_col
         st.session_state[f"mapped_unit_{active_scenario}"] = final_unit
@@ -50,7 +50,7 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
     t = st.session_state.get('t', {}) 
     
     st.write("### 📁 CSV Upload Module")
-    st.info("Lade hier ein beliebiges Lastprofil hoch. Klicke danach auf den Button, um die Spalten zuzuordnen.")
+    st.info("Upload any load profile here. Then click the button to map the columns.")
     
     uploaded_file = st.file_uploader("Upload CSV File", type=["csv"], key=f"csv_upload_{active_scenario}")
     
@@ -78,7 +78,7 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
             raw_df = load_and_clean_csv(uploaded_file)
             
             st.write("")
-            if st.button("🔍 Datei öffnen & Spalten zuordnen", type="secondary", use_container_width=True, key=f"open_popup_{active_scenario}"):
+            if st.button("🔍 Open File & Map Columns", type="secondary", use_container_width=True, key=f"open_popup_{active_scenario}"):
                 render_csv_mapping_dialog(raw_df, active_scenario)
             
             if st.session_state.get(f"csv_mapping_ready_{active_scenario}", False):
@@ -94,7 +94,7 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
                 if len(selected_dates) == 2:
                     filtered_df = data[(data['timestamp'].dt.date >= selected_dates[0]) & (data['timestamp'].dt.date <= selected_dates[1])]
         except Exception as e:
-            st.error(f"CSV Einlese-Fehler: {e}")
+            st.error(f"CSV Reading Error: {e}")
             
     elif 'filtered_data' in st.session_state and p.get('data_source') == 'CSV':
         filtered_df = st.session_state['filtered_data']

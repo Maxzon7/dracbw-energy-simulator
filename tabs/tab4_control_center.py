@@ -9,7 +9,7 @@ def render_tab4_control_center():
     Displays a structured tree-view grouping sub-scenarios under their parent baselines.
     """
     st.write("## 🗄️ Scenario Control Center")
-    st.info("Verwalte deine aktiven Szenarien. Exportiere sie als .drac-Datei für Kundentermine oder lade Backups hoch.")
+    st.info("Manage your active scenarios. Export them as .drac files for client meetings or upload backups.")
     
     if 'scenario_vault' not in st.session_state:
         st.session_state['scenario_vault'] = {}
@@ -17,24 +17,24 @@ def render_tab4_control_center():
     
     # --- 1. IMPORT SECTION ---
     st.write("### 📥 Import DRAC Backup")
-    uploaded_drac = st.file_uploader("Lade eine gespeicherte .drac Szenario-Datei hoch", type=["drac"])
+    uploaded_drac = st.file_uploader("Upload a saved .drac scenario file", type=["drac"])
     if uploaded_drac:
         try:
             suggested_name = uploaded_drac.name.replace(".drac", "")
-            import_name = st.text_input("Szenario-Name für Import:", value=suggested_name)
-            if st.button("🚀 In aktiven Tresor laden", type="primary", use_container_width=True):
+            import_name = st.text_input("Scenario name for import:", value=suggested_name)
+            if st.button("🚀 Load into Active Vault", type="primary", use_container_width=True):
                 st.session_state['scenario_vault'][import_name] = parse_drac_import(uploaded_drac)
-                st.success(f"✅ '{import_name}' erfolgreich importiert!")
+                st.success(f"✅ '{import_name}' successfully imported!")
                 st.rerun() 
         except Exception as e:
-            st.error(f"Import fehlgeschlagen. Datei eventuell beschädigt. Fehler: {e}")
+            st.error(f"Import failed. File might be corrupted. Error: {e}")
 
     st.divider()
 
     # --- 2. STRUCTURED TREE-VIEW INVENTORY ---
-    st.write("### 🗃️ Aktives Tresor-Inventar")
+    st.write("### 🗃️ Active Vault Inventory")
     if not vault:
-        st.warning("Dein Tresor ist aktuell leer. Erstelle Profile in der Baseline oder lade ein Backup hoch.")
+        st.warning("Your vault is currently empty. Create profiles in the baseline tab or upload a backup.")
         return
 
     # Sort into Baselines (or Orphans) and Sub-Scenarios safely
@@ -46,14 +46,14 @@ def render_tab4_control_center():
         peak = df['consumption_kw'].max() if df is not None else 0.0
         
         # Main Accordion for the Baseline
-        with st.expander(f"🏢 HAUPT-SZENARIO: {base_name} ({base_data.get('data_source', 'Unknown')})"):
+        with st.expander(f"🏢 MAIN SCENARIO: {base_name} ({base_data.get('data_source', 'Unknown')})"):
             c_inf, c_act = st.columns([3, 1])
-            c_inf.write(f"**Max. Spitzenlast:** {peak:.1f} kW | **Netzlimit:** {base_data.get('grid_limit', 0.0):.1f} kW")
+            c_inf.write(f"**Max. Peak Load:** {peak:.1f} kW | **Grid Limit:** {base_data.get('grid_limit', 0.0):.1f} kW")
             
             # Action Buttons
             b_export = create_drac_export(base_data)
             c_act.download_button("💾 Export", data=b_export, file_name=f"{base_name}.drac", mime="application/zip", key=f"exp_{base_name}", use_container_width=True)
-            if c_act.button("🗑️ Löschen", key=f"del_{base_name}", use_container_width=True):
+            if c_act.button("🗑️ Delete", key=f"del_{base_name}", use_container_width=True):
                 del st.session_state['scenario_vault'][base_name]
                 st.rerun()
                 
@@ -62,7 +62,7 @@ def render_tab4_control_center():
             
             if sub_scenarios:
                 st.write("---")
-                st.write("🌿 **Zugehörige Varianten (Sub-Szenarien):**")
+                st.write("🌿 **Associated Variants (Sub-Scenarios):**")
                 
                 for sub_name in sub_scenarios:
                     sub_data = vault[sub_name]
