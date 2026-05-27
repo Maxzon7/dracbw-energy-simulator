@@ -8,3 +8,5 @@ folium
 streamlit-folium
 request
 pyarrow
+reportlab 
+pypdf

@@ -1,49 +1,46 @@
 # tabs/tab2_components/pdf_export.py
-import base64
 import io
+import os
 import datetime
-from weasyprint import HTML
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.utils import ImageReader
+from pypdf import PdfReader, PdfWriter
 
 def create_static_load_chart(df, grid_limit):
     """
     Generates a static load profile chart using Matplotlib.
-    Ensures stable cloud rendering without Kaleido dependencies.
     """
-    fig, ax = plt.subplots(figsize=(8, 3.5))
+    fig, ax = plt.subplots(figsize=(7, 3)) # Slightly adjusted for A4 fit
     
-    # Plot raw consumption
     ax.plot(df['timestamp'], df['consumption_kw'], label='Original Load (Baseline)', color='#A9A9A9', linewidth=1)
     
-    # Plot optimized load if battery simulation was active
     if 'final_grid_load_kw' in df.columns:
         ax.plot(df['timestamp'], df['final_grid_load_kw'], label='Optimized Grid Load', color='#00CC96', linewidth=1.5)
     
-    # Plot grid limit
     ax.axhline(y=grid_limit, color='red', linestyle='--', label='Grid Limit')
     
     ax.set_ylabel('Power (kW)')
     ax.legend(loc='upper right', fontsize='small')
     ax.grid(True, linestyle=':', alpha=0.5)
     
-    # Format X-Axis nicely
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d.%m. %H:%M'))
     plt.xticks(rotation=30)
     plt.tight_layout()
     
-    # Save to memory buffer and encode
     img_buffer = io.BytesIO()
     plt.savefig(img_buffer, format='png', dpi=150)
     plt.close(fig)
     img_buffer.seek(0)
-    return base64.b64encode(img_buffer.read()).decode('utf-8')
+    return img_buffer
 
 def create_static_soc_chart(df):
     """
     Generates a static State of Charge (SoC) chart.
     """
-    fig, ax = plt.subplots(figsize=(8, 2.5))
+    fig, ax = plt.subplots(figsize=(7, 2.5))
     
     ax.fill_between(df['timestamp'], df['battery_soc_kwh'], color='#636EFA', alpha=0.3)
     ax.plot(df['timestamp'], df['battery_soc_kwh'], color='#636EFA', linewidth=1.5)
@@ -59,125 +56,103 @@ def create_static_soc_chart(df):
     plt.savefig(img_buffer, format='png', dpi=150)
     plt.close(fig)
     img_buffer.seek(0)
-    return base64.b64encode(img_buffer.read()).decode('utf-8')
+    return img_buffer
 
 def generate_tech_pdf(report_title: str, metrics: dict, plot_data, battery_enabled: bool) -> io.BytesIO:
     """
-    Generates a highly professional PDF report incorporating DRACBV company branding.
+    Generates a professional PDF report by overlaying technical data 
+    onto the official DRACBV Template.pdf watermark.
     """
-    current_date = datetime.date.today().strftime("%d.%m.%Y")
+    current_date = datetime.date.today().strftime("%Y-%m-%d")
     
-    # Generate charts from data
-    load_img_base64 = create_static_load_chart(plot_data, metrics['grid_limit'])
+    # ---------------------------------------------------------
+    # 1. CREATE TRANSPARENT OVERLAY (The "Glass Pane")
+    # ---------------------------------------------------------
+    overlay_buffer = io.BytesIO()
+    c = canvas.Canvas(overlay_buffer, pagesize=A4)
     
-    soc_html = ""
+    # ReportLab coordinates start at bottom-left (x=0, y=0). 
+    # Top of A4 is approx y=840. We start writing below the letterhead.
+    
+    # Title & Meta (y=700 leaves space for your company header)
+    c.setFont("Helvetica-Bold", 18)
+    c.setFillColorRGB(0.17, 0.24, 0.31) # Dark Slate
+    c.drawString(50, 700, "Energy Simulation & System Analysis")
+    
+    c.setFont("Helvetica", 10)
+    c.setFillColorRGB(0.5, 0.55, 0.55) # Gray
+    c.drawString(50, 680, f"Scenario: {report_title} | Analysis Date: {current_date}")
+    
+    # Summary Box
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColorRGB(0.15, 0.68, 0.37) # DRACBV Green
+    c.drawString(50, 640, "Management Summary:")
+    
+    c.setFont("Helvetica", 10)
+    c.setFillColorRGB(0.17, 0.24, 0.31)
+    summary_text = (f"This technical report evaluates the load profile and simulates hardware optimizations to "
+                    f"maintain the grid limit of {metrics['grid_limit']:.1f} kW.")
+    c.drawString(50, 625, summary_text)
+    
+    # Technical Metrics
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColorRGB(0.15, 0.68, 0.37)
+    c.drawString(50, 580, "1. Technical Specifications & Metrics")
+    
+    c.setFont("Helvetica", 10)
+    c.setFillColorRGB(0.17, 0.24, 0.31)
+    c.drawString(50, 560, f"Original Peak Load (Baseline): {metrics['peak_raw']:.2f} kW")
+    c.drawString(50, 545, f"Target Grid Limit: {metrics['grid_limit']:.2f} kW")
+    
+    # Highlight required hardware
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(50, 530, f"Required Inverter Power (Minimum): {metrics['min_pwr']:.2f} kW")
+    c.drawString(50, 515, f"Required Net Storage Capacity (Minimum): {metrics['min_cap']:.2f} kWh")
+    
+    # Load Profile Chart
+    c.setFont("Helvetica-Bold", 12)
+    c.setFillColorRGB(0.15, 0.68, 0.37)
+    c.drawString(50, 470, "2. Load Profile Visualization")
+    
+    load_img = create_static_load_chart(plot_data, metrics['grid_limit'])
+    c.drawImage(ImageReader(load_img), x=40, y=250, width=500, height=210)
+    
+    # Battery SoC Chart (if enabled)
     if battery_enabled and 'battery_soc_kwh' in plot_data.columns:
-        soc_img_base64 = create_static_soc_chart(plot_data)
-        soc_html = f"""
-        <div class="section-title" style="page-break-before: always;">3. Battery State of Charge (SoC)</div>
-        <div class="chart-container">
-            <img src="data:image/png;base64,{soc_img_base64}" class="chart">
-        </div>
-        """
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, 220, "3. Battery State of Charge (SoC)")
+        soc_img = create_static_soc_chart(plot_data)
+        c.drawImage(ImageReader(soc_img), x=40, y=40, width=500, height=170)
     
-    # DRACBV Corporate Design HTML
-    html_template = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <style>
-        @page {{ 
-            size: A4; 
-            margin: 20mm 20mm 30mm 20mm; 
-            @bottom-center {{
-                content: "Page " counter(page) " of " counter(pages);
-                font-size: 8pt;
-                color: #7f8c8d;
-            }}
-        }}
-        body {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #2c3e50; line-height: 1.6; }}
-        
-        /* HEADER */
-        .header-table {{ width: 100%; border-bottom: 3px solid #27ae60; padding-bottom: 10px; margin-bottom: 30px; }}
-        .header-left {{ text-align: left; font-size: 8pt; color: #555; line-height: 1.3; }}
-        .header-right {{ text-align: right; font-size: 20pt; font-weight: bold; color: #2c3e50; vertical-align: top; }}
-        .green-text {{ color: #27ae60; }}
-        
-        /* TYPOGRAPHY */
-        .title {{ font-size: 20pt; font-weight: bold; color: #2c3e50; margin-bottom: 5px; text-transform: uppercase; }}
-        .subtitle {{ font-size: 11pt; color: #7f8c8d; margin-bottom: 30px; }}
-        .section-title {{ font-size: 13pt; font-weight: bold; border-bottom: 1px solid #bdc3c7; padding-bottom: 5px; margin-top: 30px; margin-bottom: 15px; color: #27ae60; }}
-        
-        /* CONTENT BLOCKS */
-        .summary-box {{ background-color: #f9f9f9; border-left: 4px solid #27ae60; padding: 15px; margin-bottom: 25px; font-size: 10pt; }}
-        table.metrics {{ width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 10pt; }}
-        table.metrics th, table.metrics td {{ text-align: left; padding: 10px; border-bottom: 1px solid #ecf0f1; }}
-        table.metrics th {{ background-color: #fcfcfc; font-weight: bold; color: #34495e; width: 60%; }}
-        
-        /* CHARTS */
-        .chart-container {{ text-align: center; margin-top: 15px; }}
-        .chart {{ max-width: 100%; height: auto; border: 1px solid #ecf0f1; border-radius: 4px; padding: 5px; }}
-        
-        /* FOOTER */
-        .footer {{ position: fixed; bottom: -20mm; left: 0; right: 0; height: 15mm; font-size: 7.5pt; color: #7f8c8d; border-top: 1px solid #ecf0f1; padding-top: 5mm; }}
-        .footer-table {{ width: 100%; }}
-        .footer-table td {{ text-align: left; vertical-align: top; width: 33%; line-height: 1.4; }}
-    </style>
-    </head>
-    <body>
-        <table class="header-table">
-            <tr>
-                <td class="header-left">
-                    <strong>DRACBV Green Energy Solutions</strong><br>
-                    Oud-Loosdrechtsedijk 254<br>
-                    1231 NJ Loosdrecht<br>
-                    +31 (0)20 213 77 70<br>
-                    projecten@dracbv.nl | www.dracbv.nl
-                </td>
-                <td class="header-right">
-                    <span class="green-text">DRAC</span>BV
-                </td>
-            </tr>
-        </table>
-
-        <div class="title">Energy Simulation & System Analysis</div>
-        <div class="subtitle">Scenario: <strong>{report_title}</strong> | Analysis Date: {current_date}</div>
-
-        <div class="summary-box">
-            <strong>Management Summary:</strong><br>
-            This technical report evaluates the load profile and simulates hardware-assisted optimizations (such as a Battery Energy Storage System or PV integration) to maintain the defined grid connection limit of <strong>{metrics['grid_limit']:.1f} kW</strong> and execute peak shaving.
-        </div>
-
-        <div class="section-title">1. Technical Specifications & Metrics</div>
-        <table class="metrics">
-            <tr><th>Parameter</th><th>Calculated Value</th></tr>
-            <tr><td>Original Peak Load (Baseline)</td><td>{metrics['peak_raw']:.2f} kW</td></tr>
-            <tr><td>Target Grid Limit</td><td>{metrics['grid_limit']:.2f} kW</td></tr>
-            <tr><td>Required Inverter Power (Minimum)</td><td><strong>{metrics['min_pwr']:.2f} kW</strong></td></tr>
-            <tr><td>Required Net Storage Capacity (Minimum)</td><td><strong>{metrics['min_cap']:.2f} kWh</strong></td></tr>
-        </table>
-        
-        <div class="section-title">2. Load Profile Visualization</div>
-        <div class="chart-container">
-            <img src="data:image/png;base64,{load_img_base64}" class="chart">
-        </div>
-        
-        {soc_html}
-
-        <div class="footer">
-            <table class="footer-table">
-                <tr>
-                    <td><strong>DRACBV Green Energy Solutions</strong><br>Oud-Loosdrechtsedijk 254<br>1231 NJ Loosdrecht</td>
-                    <td><strong>Contact</strong><br>+31 (0)20 213 77 70<br>projecten@dracbv.nl</td>
-                    <td><strong>Legal</strong><br>IBAN: NL98 INGB 0709 4878 78<br>BTW: NL864308024B01<br>KVK: 87487500</td>
-                </tr>
-            </table>
-        </div>
-    </body>
-    </html>
-    """
+    c.save()
+    overlay_buffer.seek(0)
     
-    pdf_buffer = io.BytesIO()
-    HTML(string=html_template).write_pdf(pdf_buffer)
-    pdf_buffer.seek(0)
-    return pdf_buffer
+    # ---------------------------------------------------------
+    # 2. MERGE OVERLAY WITH DRACBV TEMPLATE
+    # ---------------------------------------------------------
+    # Get the absolute path to MVP3/Documents/Template.pdf
+    current_dir = os.path.dirname(os.path.abspath(__file__)) # is in tab2_components
+    base_dir = os.path.dirname(os.path.dirname(current_dir)) # Up to MVP3 root
+    template_path = os.path.join(base_dir, "Documents", "Template.pdf")
+    
+    # If the template cannot be found for some reason, return just the overlay
+    if not os.path.exists(template_path):
+        return overlay_buffer
+        
+    overlay_pdf = PdfReader(overlay_buffer)
+    background_pdf = PdfReader(open(template_path, "rb"))
+    output = PdfWriter()
+    
+    # We grab the first page of your Template.pdf
+    bg_page = background_pdf.pages[0]
+    overlay_page = overlay_pdf.pages[0]
+    
+    # Stamp the transparent overlay onto the background
+    bg_page.merge_page(overlay_page)
+    output.add_page(bg_page)
+    
+    final_output = io.BytesIO()
+    output.write(final_output)
+    final_output.seek(0)
+    
+    return final_output
