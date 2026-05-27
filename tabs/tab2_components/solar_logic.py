@@ -43,22 +43,41 @@ def generate_solar_profile(baseline_df: pd.DataFrame, project_metadata: dict, so
     if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
         df['timestamp'] = pd.to_datetime(df['timestamp'])
         
-    start_date = df['timestamp'].min().strftime("%Y-%m-%d")
-    end_date = df['timestamp'].max().strftime("%Y-%m-%d")
+    start_date = df['timestamp'].min()
+    end_date = df['timestamp'].max()
+    
+    # --- DER FIX: DIE ZUKUNFTS-FALLE UMGEHEN ---
+    # Wir verschieben die Abfrage für das Wetter immer auf ein festes Referenzjahr (2022),
+    # da die Archive-API keine Daten für aktuelle/zukünftige Monate hat.
+    year_offset = start_date.year - 2022
+    if year_offset > 0:
+        api_start = (start_date - pd.DateOffset(years=year_offset)).strftime("%Y-%m-%d")
+        api_end = (end_date - pd.DateOffset(years=year_offset)).strftime("%Y-%m-%d")
+    else:
+        api_start = start_date.strftime("%Y-%m-%d")
+        api_end = end_date.strftime("%Y-%m-%d")
     
     # 1. Fetch Live Satellite Weather Data from Open-Meteo
     try:
         url = (
             f"https://archive-api.open-meteo.com/v1/archive?"
             f"latitude={lat}&longitude={lon}&"
-            f"start_date={start_date}&end_date={end_date}&"
+            f"start_date={api_start}&end_date={api_end}&"
             f"hourly=shortwave_radiation"
         )
         response = requests.get(url, timeout=10).json()
         
+        # Sicherstellen, dass die API keinen versteckten Text-Fehler gesendet hat
+        if 'error' in response:
+            raise ValueError(f"API meldet: {response.get('reason', 'Keine Wetterdaten für diesen Zeitraum')}")
+            
         hourly_times = pd.to_datetime(response['hourly']['time'])
         hourly_rad = response['hourly']['shortwave_radiation']  # W/m²
         
+        # Schiebe die geholten 2022er Zeiten wieder exakt auf dein Original-Jahr zurück
+        if year_offset > 0:
+            hourly_times = hourly_times + pd.DateOffset(years=year_offset)
+            
         hourly_df = pd.DataFrame({'ghi_w_m2': hourly_rad}, index=hourly_times)
         
         # 2. Linear Resolution Upsampling (Hourly -> 15-Minute Load Profile Grid)
