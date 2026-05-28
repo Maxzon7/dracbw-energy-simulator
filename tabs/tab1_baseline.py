@@ -5,6 +5,7 @@ from tabs.tab1_components.manual import render_manual_builder
 from tabs.tab1_components.upload import render_csv_upload
 from tabs.tab1_components.chart import render_baseline_chart
 from tabs.tab1_components.validation_ui import render_validation_dashboard
+from tabs.tab1_components.financial_ui import render_financial_inputs
 
 def render_tab1_baseline():
     """
@@ -66,6 +67,10 @@ def render_tab1_baseline():
     st.write("### 🌍 Project Parameters")
     project_metadata = render_project_params(p.get('project_metadata', {}), active_scenario)
     st.session_state['current_project_metadata'] = project_metadata
+
+    # --- 2.5 ECONOMIC BASELINE (NEU) ---
+    financial_metadata = render_financial_inputs(p.get('financial_metadata', {}), active_scenario)
+    st.session_state['current_financial_metadata'] = financial_metadata
     st.divider()
 
     # --- 3. DATA SOURCE SELECTOR ---
