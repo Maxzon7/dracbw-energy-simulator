@@ -48,23 +48,29 @@ def render_tab2_scenarios():
         scenario_mode = st.radio("Choose system configuration:", ["☀️ Solar PV Only", "🔋 Battery (BESS) Only", "⚙️ Combined"])
         st.divider()
         
+        # --- UI in Expanders (to save space) ---
+        params = {}
         if scenario_mode == "☀️ Solar PV Only":
-            params = render_solar_ui(scenario_id=selected_baseline)
+            with st.expander("☀️ Configure Solar PV", expanded=True):
+                params = render_solar_ui(scenario_id=selected_baseline)
+                
         elif scenario_mode == "🔋 Battery (BESS) Only":
-            params = render_battery_ui(scenario_id=selected_baseline) 
-        else:
-            params = {}
+            with st.expander("🔋 Configure Battery Storage", expanded=True):
+                params = render_battery_ui(scenario_id=selected_baseline) 
+                
+        else: # Combined Mode
             with st.expander("☀️ Configure Solar PV", expanded=True):
                 params['solar'] = render_solar_ui(scenario_id=f"{selected_baseline}_c_sol")
             with st.expander("🔋 Configure Battery Storage", expanded=True):
                 params['battery'] = render_battery_ui(scenario_id=f"{selected_baseline}_c_bat")
             
         st.divider()
-        st.write("### 🎨 Chart Colors")
-        col_raw = st.color_picker("Original Load Color", "#A9A9A9")
-        col_opt = st.color_picker("Optimized Load Color", "#00CC96")
-        col_soc = st.color_picker("Battery SoC Color", "#636EFA")
-        col_act = st.color_picker("Battery Action Color", "#FFA15A")
+
+        with st.expander("🎨 Chart Colors (Settings)", expanded=False):
+            col_raw = st.color_picker("Original Load Color", "#A9A9A9")
+            col_opt = st.color_picker("Optimized Load Color", "#00CC96")
+            col_soc = st.color_picker("Battery SoC Color", "#636EFA")
+            col_act = st.color_picker("Battery Action Color", "#FFA15A")
         
         st.divider()
         run_sim = st.button("🚀 Run Simulation", type="primary", use_container_width=True)
