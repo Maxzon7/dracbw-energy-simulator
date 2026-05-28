@@ -44,24 +44,24 @@ def render_tab2_scenarios():
     col_input, col_chart = st.columns([1, 2.5])
     
     with col_input:
-        st.write("### 🏗️ 2. Select Technology")
-        scenario_mode = st.radio("Choose system configuration:", ["☀️ Solar PV Only", "🔋 Battery (BESS) Only", "⚙️ Combined"])
+        st.write("###  2. Select Technology")
+        scenario_mode = st.radio("Choose system configuration:", ["Solar PV Only", "Battery (BESS) Only", "Combined"])
         st.divider()
         
         # --- UI in Expanders (to save space) ---
         params = {}
-        if scenario_mode == "☀️ Solar PV Only":
-            with st.expander("☀️ Configure Solar PV", expanded=True):
+        if scenario_mode == "Solar PV Only":
+            with st.expander("Configure Solar PV", expanded=True):
                 params = render_solar_ui(scenario_id=selected_baseline)
                 
-        elif scenario_mode == "🔋 Battery (BESS) Only":
-            with st.expander("🔋 Configure Battery Storage", expanded=True):
+        elif scenario_mode == "Battery (BESS) Only":
+            with st.expander("Configure Battery Storage", expanded=True):
                 params = render_battery_ui(scenario_id=selected_baseline) 
                 
         else: # Combined Mode
-            with st.expander("☀️ Configure Solar PV", expanded=True):
+            with st.expander("Configure Solar PV", expanded=True):
                 params['solar'] = render_solar_ui(scenario_id=f"{selected_baseline}_c_sol")
-            with st.expander("🔋 Configure Battery Storage", expanded=True):
+            with st.expander("Configure Battery Storage", expanded=True):
                 params['battery'] = render_battery_ui(scenario_id=f"{selected_baseline}_c_bat")
             
         st.divider()
@@ -78,10 +78,10 @@ def render_tab2_scenarios():
     # --- 2. PIPELINE EXECUTION ENGINE ---
     if run_sim:
         with st.spinner("Processing physical interval math cascade..."):
-            if scenario_mode == "☀️ Solar PV Only":
+            if scenario_mode == "Solar PV Only":
                 calculated_df = generate_solar_profile(baseline_df, project_metadata, params)
                 calculated_df['final_grid_load_kw'] = calculated_df['net_load_kw']
-            elif scenario_mode == "🔋 Battery (BESS) Only":
+            elif scenario_mode == "Battery (BESS) Only":
                 calculated_df = run_isolated_scenario(baseline_df, "Battery (Peak Shaving)", params, grid_limit, res)
             else:
                 solar_df = generate_solar_profile(baseline_df, project_metadata, params['solar'])
@@ -107,14 +107,14 @@ def render_tab2_scenarios():
             fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['consumption_kw'], name="Original Demand", line=dict(color=col_raw, width=1)))
             fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['final_grid_load_kw'], name="Final Grid Demand", line=dict(color=col_opt, width=2)))
             
-            if current_mode in ["☀️ Solar PV Only", "⚙️ Combined"] and 'solar_gen_kw' in results.columns:
+            if current_mode in ["Solar PV Only", "Combined"] and 'solar_gen_kw' in results.columns:
                 fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['solar_gen_kw'], name="Solar Yield", line=dict(color='#FFC107', width=1), fill='tozeroy'))
                                           
             fig_load.add_hline(y=grid_limit, line_dash="dash", line_color="red", annotation_text="Grid Limit")
             fig_load.update_layout(height=400, yaxis_title="kW", margin=dict(t=10, b=10), legend=dict(orientation="h", y=1.1))
             st.plotly_chart(fig_load, use_container_width=True)
 
-            if current_mode in ["🔋 Battery (BESS) Only", "⚙️ Combined"]:
+            if current_mode in ["Battery (BESS) Only", "Combined"]:
                 c_left, c_right = st.columns(2)
                 with c_left:
                     st.write("**Battery Charge/Discharge (kW)**")
@@ -145,19 +145,33 @@ def render_tab2_scenarios():
 
         # --- HARDWARE SUB-SCENARIO STORAGE ---
         st.divider()
-        st.write("### save this variant")
+        st.write("### 💾 Save this variant")
         st.info("Save this configuration as Subscenario to compare it with the base and alternative Sub scenarios.")
         
         default_name = f"{selected_baseline} + {current_mode.split(' ')[1]}" if " " in current_mode else f"{selected_baseline}_Sub"
         sub_scenario_name = st.text_input("Name this Sub-Scenario:", value=default_name)
         
-        if st.button("put variant in the vault", type="primary", use_container_width=True):
-            if 'scenario_vault' not in st.session_state:
-                st.session_state['scenario_vault'] = {}
-            base_grid_limit = st.session_state['scenario_vault'][selected_baseline].get('grid_limit', 50.0)
+        vault = st.session_state.get('scenario_vault', {})
+        name_exists = sub_scenario_name in vault
+        save_disabled = False
+        
+        if name_exists:
+            st.warning(f"⚠️ A variant named '{sub_scenario_name}' already exists. Rename it to save as a copy, or check the box to overwrite.")
+            overwrite = st.checkbox("Overwrite existing variant", value=False)
+            if not overwrite:
+                save_disabled = True
+        
+        if st.button("🚀 Put variant in the vault", type="primary", use_container_width=True, disabled=save_disabled):
             
-            st.session_state['scenario_vault'][sub_scenario_name] = {
-                "df": results, "parent": selected_baseline, "data_source": current_mode, "grid_limit": base_grid_limit,
+            base_grid_limit = vault[selected_baseline].get('grid_limit', 50.0)
+            
+            vault[sub_scenario_name] = {
+                "df": results, 
+                "parent": selected_baseline, 
+                "data_source": current_mode, 
+                "grid_limit": base_grid_limit,
                 "params": {"is_hardware": True, "hardware_params": current_params}
             }
+            st.session_state['scenario_vault'] = vault
+            
             st.success(f"✅ '{sub_scenario_name}' has been successfully saved as a variant of '{selected_baseline}' !")

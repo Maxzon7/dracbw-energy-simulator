@@ -29,10 +29,10 @@ def render_performance_matrix(results: pd.DataFrame, baseline_df: pd.DataFrame, 
     col_autarky, col_grid, col_asset = st.columns(3)
     
     with col_autarky:
-        st.write("🟢 **Autarky & Yield**")
+        st.write("**Autarky & Yield**")
         st.metric("Degree of Autarky", f"{autarky_pct:.1f} %")
         
-        if current_mode in ["☀️ Solar PV Only", "⚙️ Combined"]:
+        if current_mode in ["Solar PV Only", "Combined"]:
             total_solar_kwh = results['solar_gen_kw'].sum() / (60 / res)
             
             if current_mode == "⚙️ Combined":
@@ -55,15 +55,15 @@ def render_performance_matrix(results: pd.DataFrame, baseline_df: pd.DataFrame, 
             st.metric("Curtailed Energy", f"{curtailed_kwh:,.0f} kWh", delta="Wasted", delta_color="inverse")
             
     with col_grid:
-        st.write("🚨 **Grid Stability**")
+        st.write("**Grid Stability**")
         st.metric("New Peak Load", f"{peak_new:.1f} kW", delta=f"-{peak_shaving_pct:.1f}% Peak Shaved", delta_color="normal")
         st.metric("Uncovered Demand", "0 kWh", delta="Safe", delta_color="normal")
         
     with col_asset:
-        st.write("🔋 **Hardware & Assets**")
+        st.write("**Hardware & Assets**")
         min_reqs = {"min_power_kw": 0, "true_min_capacity_kwh": 0}
         
-        if current_mode in ["🔋 Battery (BESS) Only", "⚙️ Combined"]:
+        if current_mode in ["Battery (BESS) Only", "Combined"]:
             min_reqs = get_exact_minimum_requirements(baseline_df, grid_limit, res)
             throughput_kwh = results['battery_action_kw'].abs().sum() / (60 / res)
             b_cap = current_params.get('battery', current_params).get('b_cap', 0) if isinstance(current_params, dict) else 0

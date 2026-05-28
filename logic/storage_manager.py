@@ -4,49 +4,72 @@ import json
 import zipfile
 import io
 
-def create_drac_export(vault_scenario: dict) -> bytes:
+def create_drac_export(scenarios_dict: dict) -> bytes:
     """
-    Compresses a scenario dictionary (DataFrame + Metadata) into a unified .drac binary file.
-    Uses Parquet for the time-series data to ensure extreme compression and fast I/O.
+    Compresses multiple scenarios (e.g., a Baseline + all its Sub-scenarios) 
+    into a unified .drac binary archive. Creates internal folders for each.
     """
-    # 1. Create an in-memory buffer to hold the ZIP file
     zip_buffer = io.BytesIO()
     
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        
-        # 2. Convert DataFrame to Parquet and write to the ZIP archive
-        df = vault_scenario.get("df")
-        if df is not None:
-            parquet_buffer = io.BytesIO()
-            df.to_parquet(parquet_buffer, index=False, engine="pyarrow")
-            zip_file.writestr("data.parquet", parquet_buffer.getvalue())
+        for scen_name, scen_data in scenarios_dict.items():
+            # Create a safe internal folder name
+            folder = scen_name.replace("/", "_").replace("\\", "_")
             
-        # 3. Clean up the metadata (remove the df so we don't duplicate it)
-        metadata = {k: v for k, v in vault_scenario.items() if k != "df"}
-        
-        # Write metadata to a JSON file inside the ZIP
-        zip_file.writestr("metadata.json", json.dumps(metadata, default=str))
-        
+            df = scen_data.get("df")
+            if df is not None:
+                parquet_buffer = io.BytesIO()
+                df.to_parquet(parquet_buffer, index=False, engine="pyarrow")
+                zip_file.writestr(f"{folder}/data.parquet", parquet_buffer.getvalue())
+                
+            # Clean up the metadata
+            metadata = {k: v for k, v in scen_data.items() if k != "df"}
+            zip_file.writestr(f"{folder}/metadata.json", json.dumps(metadata, default=str))
+            
     return zip_buffer.getvalue()
 
-def parse_drac_import(uploaded_file) -> dict:
+def parse_drac_import(uploaded_file, import_prefix="") -> dict:
     """
-    Extracts and rebuilds a scenario vault object from an uploaded .drac file.
+    Extracts and rebuilds a scenario vault object (potentially containing an entire tree)
+    from an uploaded .drac file.
     """
-    reconstructed_scenario = {}
+    reconstructed_scenarios = {}
     
-    # Read the uploaded binary as a ZIP archive
     with zipfile.ZipFile(uploaded_file, "r") as zip_file:
+        paths = zip_file.namelist()
         
-        # 1. Extract and parse metadata
-        if "metadata.json" in zip_file.namelist():
-            metadata_bytes = zip_file.read("metadata.json")
-            reconstructed_scenario = json.loads(metadata_bytes.decode("utf-8"))
+        # Find unique scenario folders inside the zip
+        folders = set([p.split("/")[0] for p in paths if "/" in p])
+        
+        # Backward compatibility for old single-scenario .drac files
+        if not folders and ("metadata.json" in paths or "data.parquet" in paths):
+            scen_dict = {}
+            if "metadata.json" in paths:
+                scen_dict.update(json.loads(zip_file.read("metadata.json").decode("utf-8")))
+            if "data.parquet" in paths:
+                pq_bytes = zip_file.read("data.parquet")
+                scen_dict["df"] = pd.read_parquet(io.BytesIO(pq_bytes), engine="pyarrow")
             
-        # 2. Extract and rebuild the DataFrame
-        if "data.parquet" in zip_file.namelist():
-            parquet_bytes = zip_file.read("data.parquet")
-            parquet_buffer = io.BytesIO(parquet_bytes)
-            reconstructed_scenario["df"] = pd.read_parquet(parquet_buffer, engine="pyarrow")
+            name = import_prefix if import_prefix else "Imported_Legacy_Scenario"
+            reconstructed_scenarios[name] = scen_dict
+            return reconstructed_scenarios
+
+        # New multi-scenario tree parsing
+        for folder in folders:
+            scen_dict = {}
+            if f"{folder}/metadata.json" in paths:
+                scen_dict.update(json.loads(zip_file.read(f"{folder}/metadata.json").decode("utf-8")))
+            if f"{folder}/data.parquet" in paths:
+                pq_bytes = zip_file.read(f"{folder}/data.parquet")
+                scen_dict["df"] = pd.read_parquet(io.BytesIO(pq_bytes), engine="pyarrow")
             
-    return reconstructed_scenario
+            # Apply prefix to the name to avoid overwriting existing vault data
+            new_name = f"{import_prefix}{folder}" if import_prefix else folder
+            
+            # MAGIE: If it's a sub-scenario, we must also update its parent's name to keep the tree linked!
+            if scen_dict.get("parent") and import_prefix:
+                scen_dict["parent"] = f"{import_prefix}{scen_dict['parent']}"
+                
+            reconstructed_scenarios[new_name] = scen_dict
+            
+    return reconstructed_scenarios

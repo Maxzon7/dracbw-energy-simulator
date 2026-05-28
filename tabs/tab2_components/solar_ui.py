@@ -4,9 +4,9 @@ import streamlit as st
 def render_solar_ui(scenario_id: str) -> dict:
     """
     Layer 1: Renders the UI inputs for the Solar PV simulation.
-    Returns a dictionary of the configured physical parameters.
+    Returns a dictionary of the configured physical and financial parameters.
     """
-    st.write("### ☀️ Solar PV Dimensioning")
+    st.write("### Solar PV Dimensioning")
     st.info("Configure the physical and geographical properties of the solar installation.")
     
     col1, col2 = st.columns(2)
@@ -62,6 +62,27 @@ def render_solar_ui(scenario_id: str) -> dict:
             key=f"sol_therm_{scenario_id}"
         )
         
+    # --- NEU: Financial Estimates (CAPEX/OPEX) ---
+    st.divider()
+    with st.expander("$$ Financial Estimates (CAPEX & OPEX)", expanded=False):
+        st.write("Configure the estimated capital expenditure and maintenance costs for the ROI analysis.")
+        c_fin1, c_fin2 = st.columns(2)
+        
+        capex_per_kwp = c_fin1.number_input(
+            "CAPEX (€ per kWp)", 
+            min_value=100.0, max_value=3000.0, value=850.0, step=50.0,
+            key=f"sol_capex_{scenario_id}"
+        )
+        opex_pct = c_fin2.number_input(
+            "Annual OPEX (% of CAPEX)", 
+            min_value=0.0, max_value=10.0, value=1.0, step=0.1,
+            help="Estimated yearly maintenance, insurance, and cleaning costs.",
+            key=f"sol_opex_{scenario_id}"
+        )
+        
+        total_solar_capex = installed_kwp * capex_per_kwp
+        st.info(f"**Estimated Solar Investment (CAPEX): {total_solar_capex:,.0f} €**")
+        
     return {
         "panel_count": panel_count,
         "panel_wp": panel_wp,
@@ -69,5 +90,8 @@ def render_solar_ui(scenario_id: str) -> dict:
         "azimuth": azimuth,
         "tilt": tilt,
         "performance_ratio": pr,
-        "thermal_loss": thermal_loss
+        "thermal_loss": thermal_loss,
+        "capex_per_kwp": capex_per_kwp,
+        "opex_pct": opex_pct,
+        "total_capex": total_solar_capex
     }

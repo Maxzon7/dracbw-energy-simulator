@@ -4,9 +4,9 @@ import streamlit as st
 def render_battery_ui(scenario_id: str) -> dict:
     """
     Layer 1: Renders advanced UI inputs for the BESS (Battery Energy Storage System).
-    Includes targeted shaving thresholds and dynamic recharge boundary windows.
+    Includes targeted shaving thresholds, recharge boundary windows, and financial parameters.
     """
-    st.write("### 🔋 BESS Storage Dimensioning")
+    st.write("### BESS Storage Dimensioning")
     st.info("Configure the storage hardware limits, target operational thresholds, and battery recharging strategy.")
     
     col1, col2 = st.columns(2)
@@ -15,17 +15,17 @@ def render_battery_ui(scenario_id: str) -> dict:
         st.write("**Hardware Capacity & Power**")
         b_cap = st.number_input(
             "Storage Capacity (kWh)", 
-            min_value=10, max_value=5000, value=200, step=50,
+            min_value=10.0, max_value=5000.0, value=200.0, step=50.0,
             key=f"bat_cap_{scenario_id}"
         )
         b_pwr = st.number_input(
             "Max Inverter Power (kW)", 
-            min_value=5, max_value=2000, value=100, step=25,
+            min_value=5.0, max_value=2000.0, value=100.0, step=25.0,
             key=f"bat_pwr_{scenario_id}"
         )
         
         st.divider()
-        st.write("**🎯 Peak Shaving Target**")
+        st.write("**Peak Shaving Target**")
         shaving_threshold = st.number_input(
             "Target Shaving Threshold (kW)",
             min_value=10.0, max_value=5000.0, value=120.0, step=10.0,
@@ -34,7 +34,7 @@ def render_battery_ui(scenario_id: str) -> dict:
         )
 
     with col2:
-        st.write("**🔄 Intelligent Recharge Control**")
+        st.write("**Intelligent Recharge Control**")
         charge_pwr_limit = st.slider(
             "Max Recharge Power Limit (kW)",
             min_value=5, max_value=500, value=30, step=5,
@@ -76,6 +76,32 @@ def render_battery_ui(scenario_id: str) -> dict:
             key=f"bat_soc_init_{scenario_id}"
         )
 
+    # --- NEU: Financial Estimates (CAPEX/OPEX) ---
+    st.divider()
+    with st.expander("$$ Financial Estimates (CAPEX & OPEX)", expanded=False):
+        st.write("Configure the estimated capital expenditure and maintenance costs for the ROI analysis.")
+        c_fin1, c_fin2, c_fin3 = st.columns(3)
+        
+        capex_per_kwh = c_fin1.number_input(
+            "Storage CAPEX (€/kWh)", 
+            min_value=50.0, max_value=1500.0, value=400.0, step=10.0,
+            key=f"bat_capex_kwh_{scenario_id}"
+        )
+        capex_per_kw = c_fin2.number_input(
+            "Inverter CAPEX (€/kW)", 
+            min_value=50.0, max_value=1000.0, value=150.0, step=10.0,
+            key=f"bat_capex_kw_{scenario_id}"
+        )
+        opex_pct = c_fin3.number_input(
+            "Annual OPEX (% of CAPEX)", 
+            min_value=0.0, max_value=10.0, value=1.5, step=0.1,
+            help="Estimated yearly maintenance, insurance, and cooling costs.",
+            key=f"bat_opex_{scenario_id}"
+        )
+        
+        total_bat_capex = (b_cap * capex_per_kwh) + (b_pwr * capex_per_kw)
+        st.info(f"**Estimated Battery Investment (CAPEX): {total_bat_capex:,.0f} €**")
+
     return {
         "b_cap": b_cap,
         "b_pwr": b_pwr,
@@ -85,5 +111,9 @@ def render_battery_ui(scenario_id: str) -> dict:
         "charge_end_hour": charge_end_hour,
         "green_charging": green_charging,
         "efficiency": efficiency,
-        "initial_soc_pct": initial_soc_pct
+        "initial_soc_pct": initial_soc_pct,
+        "capex_per_kwh": capex_per_kwh,
+        "capex_per_kw": capex_per_kw,
+        "opex_pct": opex_pct,
+        "total_capex": total_bat_capex
     }
