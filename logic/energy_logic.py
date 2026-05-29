@@ -1,11 +1,16 @@
 import pandas as pd
 import numpy as np
+import streamlit as st # <-- NEU: Wir brauchen Streamlit hier für das Gedächtnis
 
+@st.cache_data(show_spinner="Lese Rohdaten in den Zwischenspeicher...")
 def load_and_clean_csv(file_obj) -> pd.DataFrame:
     """
     Intelligently reads a CSV file, dynamically handling different separators 
-    and bypassing irregular header structures.
+    and bypassing irregular header structures. Cached for extreme performance.
     """
+    # Streamlit hashes the file. To be safe, we always start reading at byte 0.
+    file_obj.seek(0) 
+    
     # Read the first few lines as a string to analyze the structure
     content = file_obj.read().decode('utf-8', errors='ignore')
     
@@ -16,20 +21,21 @@ def load_and_clean_csv(file_obj) -> pd.DataFrame:
     first_line = lines[0] if len(lines) > 0 else ""
     
     # Check if the first line is a descriptive header rather than actual column names.
-    # The Kast L1 file starts with ';;Meter 1 groep...' which is not tabular data.
     skip_rows = 0
     if first_line.startswith(';;') or 'Meter' in first_line:
         skip_rows = 1
         
     # Read the CSV. 
-    # sep=None allows the python engine to automatically detect the delimiter (',' or ';').
+    # sep=None allows the python engine to automatically detect the delimiter.
     df = pd.read_csv(file_obj, sep=None, engine='python', skiprows=skip_rows)
     return df
 
+@st.cache_data(show_spinner="Formatiere Zeitstempel und erstelle Intervalle (dauert nur einmalig)...")
 def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: str = None, power_col: str = None, unit: str = "W") -> pd.DataFrame:
     """
     Standardizes the raw meter data into the required simulation format.
     Dynamically maps available columns or uses user-selected columns from the popup dialog.
+    Cached to prevent massive CPU load when re-parsing 8760+ datetime rows.
     """
     # Falls keine Spalten übergeben wurden, starte die automatische Erkennung (Fallback)
     if not time_col or not power_col:
@@ -64,7 +70,7 @@ def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: 
     if unit == "W":
         df_clean['consumption_kw'] = df_clean['consumption_kw'] / 1000.0 
     
-    # Zeitstempel parsen
+    # Zeitstempel parsen (Das ist der rechenintensivste Prozess im ganzen Tool!)
     df_clean['timestamp'] = pd.to_datetime(df_clean['timestamp'], errors='coerce')
     
     # Fehlerhafte Zeilen löschen
@@ -74,6 +80,10 @@ def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: 
     # Auf das gewünschte Intervall resampeln
     resample_rule = f"{interval_minutes}min"
     return df_clean.resample(resample_rule).mean(numeric_only=True).reset_index().dropna()
+
+
+# --- DIE UNTEREN FUNKTIONEN BLEIBEN OHNE CACHE ---
+# (Da sie sich sofort anpassen müssen, wenn man die Batterie-Parameter ändert)
 
 def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, interval_min: int) -> dict:
     """
@@ -91,7 +101,6 @@ def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, inter
     virtual_soc = 0.0
     min_soc_reached = 0.0
     
-
     for power_diff in diff:
         if power_diff > 0: 
             # Deficit: We need energy from the battery

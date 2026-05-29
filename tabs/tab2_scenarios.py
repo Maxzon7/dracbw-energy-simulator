@@ -18,7 +18,7 @@ from logic.energy_logic import simulate_battery_logic
 def render_tab2_scenarios():
     """
     Master Tab 2: Scenario Engine. Manages isolated and combined simulation pipelines (Solar + BESS cascade),
-    synchronizes interface widgets, and provides advanced DRACBV technical metrics.
+    synchronizes interface widgets, and provides advanced DRACBV technical metrics with dynamic UX controls.
     """
     t = st.session_state.get('t', {})
     st.header("Scenario Simulation (Hardware Integration)")
@@ -45,35 +45,48 @@ def render_tab2_scenarios():
     
     with col_input:
         st.write("###  2. Select Technology")
+        
+        # The Radio-Button stays OUTSIDE the form so it can dynamically change the UI below
         scenario_mode = st.radio("Choose system configuration:", ["Solar PV Only", "Battery (BESS) Only", "Combined"])
         st.divider()
         
-        # --- UI in Expanders (to save space) ---
-        params = {}
-        if scenario_mode == "Solar PV Only":
-            with st.expander("Configure Solar PV", expanded=True):
-                params = render_solar_ui(scenario_id=selected_baseline)
+        # --- BATCHING FORM: Stops slider-spam from reloading the app repeatedly ---
+        with st.form(key=f"sim_form_{scenario_mode}"):
+            # --- UI in Expanders (to save space) ---
+            params = {}
+            if scenario_mode == "Solar PV Only":
+                with st.expander("Configure Solar PV", expanded=True):
+                    params = render_solar_ui(scenario_id=selected_baseline)
+                    
+            elif scenario_mode == "Battery (BESS) Only":
+                with st.expander("Configure Battery Storage", expanded=True):
+                    # Pass the grid_limit as default shaving threshold
+                    params = render_battery_ui(scenario_id=selected_baseline, default_grid_limit=grid_limit) 
+                    
+            else: # Combined Mode
+                with st.expander("Configure Solar PV", expanded=True):
+                    params['solar'] = render_solar_ui(scenario_id=f"{selected_baseline}_c_sol")
+                with st.expander("Configure Battery Storage", expanded=True):
+                    # Pass the grid_limit as default shaving threshold
+                    params['battery'] = render_battery_ui(scenario_id=f"{selected_baseline}_c_bat", default_grid_limit=grid_limit)
                 
-        elif scenario_mode == "Battery (BESS) Only":
-            with st.expander("Configure Battery Storage", expanded=True):
-                params = render_battery_ui(scenario_id=selected_baseline) 
-                
-        else: # Combined Mode
-            with st.expander("Configure Solar PV", expanded=True):
-                params['solar'] = render_solar_ui(scenario_id=f"{selected_baseline}_c_sol")
-            with st.expander("Configure Battery Storage", expanded=True):
-                params['battery'] = render_battery_ui(scenario_id=f"{selected_baseline}_c_bat")
-            
-        st.divider()
+            st.divider()
 
-        with st.expander("🎨 Chart Colors (Settings)", expanded=False):
-            col_raw = st.color_picker("Original Load Color", "#A9A9A9")
-            col_opt = st.color_picker("Optimized Load Color", "#00CC96")
-            col_soc = st.color_picker("Battery SoC Color", "#636EFA")
-            col_act = st.color_picker("Battery Action Color", "#FFA15A")
-        
-        st.divider()
-        run_sim = st.button("🚀 Run Simulation", type="primary", use_container_width=True)
+            with st.expander("🎨 Chart Colors (Settings)", expanded=False):
+                col_raw = st.color_picker("Original Load Color", "#A9A9A9")
+                col_opt = st.color_picker("Optimized Load Color", "#00CC96")
+                col_soc = st.color_picker("Battery SoC Color", "#636EFA")
+                col_act = st.color_picker("Battery Action Color", "#FFA15A")
+            
+            st.divider()
+            
+            # Dynamic button label depending on active session simulation state
+            sim_button_text = "🚀 Run Simulation"
+            if 'active_sim_results' in st.session_state and st.session_state['active_sim_results'] is not None:
+                sim_button_text = "🔄 Rerun Simulation"
+                
+            # The submit button triggers the single, final execution
+            run_sim = st.form_submit_button(sim_button_text, type="primary", use_container_width=True)
 
     # --- 2. PIPELINE EXECUTION ENGINE ---
     if run_sim:
@@ -154,14 +167,21 @@ def render_tab2_scenarios():
         vault = st.session_state.get('scenario_vault', {})
         name_exists = sub_scenario_name in vault
         save_disabled = False
+        overwrite = False
+        
+        # Default safe configuration text for the vault action
+        vault_button_text = "🚀 Put variant in the vault"
         
         if name_exists:
-            st.warning(f"⚠️ A variant named '{sub_scenario_name}' already exists. Rename it to save as a copy, or check the box to overwrite.")
-            overwrite = st.checkbox("Overwrite existing variant", value=False)
+            st.warning(f"⚠️ A variant named '{sub_scenario_name}' already exists. Overwriting will permanently replace the old configuration data.")
+            overwrite = st.checkbox("Confirm: Overwrite existing variant", value=False)
             if not overwrite:
                 save_disabled = True
+            else:
+                # Dynamic visual text upgrade to signal structural changes
+                vault_button_text = "⚠️ OVERWRITE Existing Variant"
         
-        if st.button("🚀 Put variant in the vault", type="primary", use_container_width=True, disabled=save_disabled):
+        if st.button(vault_button_text, type="primary", use_container_width=True, disabled=save_disabled):
             
             base_grid_limit = vault[selected_baseline].get('grid_limit', 50.0)
             

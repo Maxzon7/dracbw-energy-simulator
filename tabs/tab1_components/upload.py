@@ -77,8 +77,12 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
             uploaded_file.seek(0)
             raw_df = load_and_clean_csv(uploaded_file)
             
+            # --- NEU: DIREKTE DATEN-VORSCHAU ---
+            st.write("##### 🔍 Data Preview (First 5 Rows)")
+            st.dataframe(raw_df.head(5), use_container_width=True)
+            
             st.write("")
-            if st.button("🔍 Open File & Map Columns", type="secondary", use_container_width=True, key=f"open_popup_{active_scenario}"):
+            if st.button("⚙️ Configure & Map Columns", type="secondary", use_container_width=True, key=f"open_popup_{active_scenario}"):
                 render_csv_mapping_dialog(raw_df, active_scenario)
             
             if st.session_state.get(f"csv_mapping_ready_{active_scenario}", False):

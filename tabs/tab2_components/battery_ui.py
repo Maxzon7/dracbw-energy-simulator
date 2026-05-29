@@ -1,10 +1,11 @@
 # tabs/tab2_components/battery_ui.py
 import streamlit as st
 
-def render_battery_ui(scenario_id: str) -> dict:
+def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> dict:
     """
     Layer 1: Renders advanced UI inputs for the BESS (Battery Energy Storage System).
-    Includes targeted shaving thresholds, recharge boundary windows, and financial parameters.
+    Includes targeted shaving thresholds (dynamically linked to grid limits), 
+    recharge boundary windows, and financial parameters.
     """
     st.write("### BESS Storage Dimensioning")
     st.info("Configure the storage hardware limits, target operational thresholds, and battery recharging strategy.")
@@ -26,10 +27,14 @@ def render_battery_ui(scenario_id: str) -> dict:
         
         st.divider()
         st.write("**Peak Shaving Target**")
+        
+        # Ensure the default grid limit doesn't violate Streamlit's min/max bounds
+        safe_grid_limit = max(10.0, min(5000.0, float(default_grid_limit)))
+        
         shaving_threshold = st.number_input(
             "Target Shaving Threshold (kW)",
-            min_value=10.0, max_value=5000.0, value=120.0, step=10.0,
-            help="The battery will discharge to keep the grid demand strictly at or below this value.",
+            min_value=10.0, max_value=5000.0, value=safe_grid_limit, step=10.0,
+            help="The battery will discharge to keep the grid demand strictly at or below this value. Defaults to the Baseline Grid Limit.",
             key=f"bat_thresh_{scenario_id}"
         )
 
@@ -76,7 +81,7 @@ def render_battery_ui(scenario_id: str) -> dict:
             key=f"bat_soc_init_{scenario_id}"
         )
 
-    # --- NEU: Financial Estimates (CAPEX/OPEX) ---
+    # --- Financial Estimates (CAPEX/OPEX) ---
     st.divider()
     with st.expander("$$ Financial Estimates (CAPEX & OPEX)", expanded=False):
         st.write("Configure the estimated capital expenditure and maintenance costs for the ROI analysis.")
