@@ -117,11 +117,13 @@ def render_tab2_scenarios():
             render_feasibility_check(results, grid_limit, current_params, current_mode)
             
             fig_load = go.Figure()
-            fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['consumption_kw'], name="Original Demand", line=dict(color=col_raw, width=1)))
-            fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['final_grid_load_kw'], name="Final Grid Demand", line=dict(color=col_opt, width=2)))
+            # HIER DIE ERSTEN ZWEI SCATTERGL
+            fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['consumption_kw'], name="Original Demand", line=dict(color=col_raw, width=1)))
+            fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['final_grid_load_kw'], name="Final Grid Demand", line=dict(color=col_opt, width=2)))
             
             if current_mode in ["Solar PV Only", "Combined"] and 'solar_gen_kw' in results.columns:
-                fig_load.add_trace(go.Scatter(x=results['timestamp'], y=results['solar_gen_kw'], name="Solar Yield", line=dict(color='#FFC107', width=1), fill='tozeroy'))
+                # HIER DAS DRITTE SCATTERGL
+                fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['solar_gen_kw'], name="Solar Yield", line=dict(color='#FFC107', width=1), fill='tozeroy'))
                                           
             fig_load.add_hline(y=grid_limit, line_dash="dash", line_color="red", annotation_text="Grid Limit")
             fig_load.update_layout(height=400, yaxis_title="kW", margin=dict(t=10, b=10), legend=dict(orientation="h", y=1.1))
@@ -138,7 +140,8 @@ def render_tab2_scenarios():
                 with c_right:
                     st.write("**Battery State of Charge (kWh)**")
                     fig_soc = go.Figure()
-                    fig_soc.add_trace(go.Scatter(x=results['timestamp'], y=results['battery_soc_kwh'], fill='tozeroy', line=dict(color=col_soc)))
+                    # HIER DAS VIERTE SCATTERGL
+                    fig_soc.add_trace(go.Scattergl(x=results['timestamp'], y=results['battery_soc_kwh'], fill='tozeroy', line=dict(color=col_soc)))
                     fig_soc.update_layout(height=250, margin=dict(t=10, b=10))
                     st.plotly_chart(fig_soc, use_container_width=True)
 

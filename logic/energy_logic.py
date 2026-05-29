@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import streamlit as st # <-- NEU: Wir brauchen Streamlit hier für das Gedächtnis
+import streamlit as st 
 
 @st.cache_data(show_spinner="Lese Rohdaten in den Zwischenspeicher...")
 def load_and_clean_csv(file_obj) -> pd.DataFrame:
@@ -31,7 +31,7 @@ def load_and_clean_csv(file_obj) -> pd.DataFrame:
     return df
 
 @st.cache_data(show_spinner="Formatiere Zeitstempel und erstelle Intervalle (dauert nur einmalig)...")
-def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: str = None, power_col: str = None, unit: str = "W") -> pd.DataFrame:
+def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: str = None, power_col: str = None, unit: str = "W", use_float64: bool = False) -> pd.DataFrame:
     """
     Standardizes the raw meter data into the required simulation format.
     Dynamically maps available columns or uses user-selected columns from the popup dialog.
@@ -69,6 +69,12 @@ def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: 
     # Einheiten-Umrechnung: Wenn die Daten in Watt (W) vorliegen, teile durch 1000 für kW
     if unit == "W":
         df_clean['consumption_kw'] = df_clean['consumption_kw'] / 1000.0 
+        
+    # --- UPGRADE: DATENTYP-SCHLANKHEITSKUR (DOWNCASTING) ---
+    # Default is False, which forces 32-bit floats to halve RAM usage and boost loop speed.
+    if not use_float64:
+        df_clean['consumption_kw'] = df_clean['consumption_kw'].astype('float32')
+    # -------------------------------------------------------
     
     # Zeitstempel parsen (Das ist der rechenintensivste Prozess im ganzen Tool!)
     df_clean['timestamp'] = pd.to_datetime(df_clean['timestamp'], errors='coerce')
@@ -80,7 +86,6 @@ def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: 
     # Auf das gewünschte Intervall resampeln
     resample_rule = f"{interval_minutes}min"
     return df_clean.resample(resample_rule).mean(numeric_only=True).reset_index().dropna()
-
 
 # --- DIE UNTEREN FUNKTIONEN BLEIBEN OHNE CACHE ---
 # (Da sie sich sofort anpassen müssen, wenn man die Batterie-Parameter ändert)
