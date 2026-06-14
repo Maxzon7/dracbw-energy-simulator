@@ -5,6 +5,7 @@ import pandas as pd
 
 # --- NEW: Import the outsourced Financial Engine ---
 from tabs.tab3_components.financial_engine import render_financial_dashboard
+from tabs.tab3_components.tarrif_calc import render_tariff_builder_ui
 
 def render_tab3_comparison():
     """
@@ -114,6 +115,11 @@ def render_tab3_comparison():
         if delta_rows:
             st.dataframe(pd.DataFrame(delta_rows), use_container_width=True, hide_index=True)
             
+
         # --- 3. THE CFO FINANCIAL DASHBOARD ---
         st.divider()
+        
+        # NEU: Custom Tariff Builder UI
+        render_tariff_builder_ui()
+    
         render_financial_dashboard(selected_profiles, selected_base, vault)
