@@ -6,7 +6,7 @@ weasyprint
 matplotlib
 folium
 streamlit-folium
-request
+requests
 pyarrow
 reportlab 
 pypdf
