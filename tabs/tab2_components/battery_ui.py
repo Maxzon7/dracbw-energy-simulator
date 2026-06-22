@@ -81,14 +81,14 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
             key=f"bat_soc_init_{scenario_id}"
         )
 
-    # --- Financial Estimates (CAPEX/OPEX & Degradation) ---
+   # --- Financial Estimates (CAPEX/OPEX & Lifecycle) ---
     st.divider()
-    with st.expander("$$ Financial Estimates (CAPEX, OPEX & Degradation)", expanded=False):
+    with st.expander("$$ Financial Estimates (CAPEX, OPEX & Lifecycle)", expanded=False):
         st.write("Configure the estimated capital expenditure, maintenance costs, and physical wear for the ROI analysis.")
         c_fin1, c_fin2, c_fin3, c_fin4 = st.columns(4)
         
         capex_per_kwh = c_fin1.number_input(
-            "Storage CAPEX (€/kWh)", 
+            "Storage Cells CAPEX (€/kWh)", 
             min_value=50.0, max_value=1500.0, value=400.0, step=10.0,
             key=f"bat_capex_kwh_{scenario_id}"
         )
@@ -110,8 +110,28 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
             key=f"bat_deg_{scenario_id}"
         )
         
-        total_bat_capex = (b_cap * capex_per_kwh) + (b_pwr * capex_per_kw)
-        st.info(f"**Estimated Battery Investment (CAPEX): {total_bat_capex:,.0f} €**")
+        # NEU: Der Hardware Austausch (Replacement)
+        st.write("**Hardware Replacement (End of Life)**")
+        c_rep1, c_rep2 = st.columns(2)
+        replacement_year = c_rep1.slider(
+            "Cell Replacement Year", 
+            min_value=5, max_value=15, value=10,
+            help="Year in which the battery cells need to be replaced.",
+            key=f"bat_rep_yr_{scenario_id}"
+        )
+        replacement_pct = c_rep2.number_input(
+            "Replacement Cost (% of Storage Cells)", 
+            min_value=10.0, max_value=150.0, value=100.0, step=5.0,
+            help="Cost to replace the cells as a percentage of the original Storage Cells CAPEX.",
+            key=f"bat_rep_pct_{scenario_id}"
+        )
+        
+        # Genaue Kostentrennung für die BWL-Logik
+        total_storage_capex = b_cap * capex_per_kwh
+        total_inverter_capex = b_pwr * capex_per_kw
+        total_bat_capex = total_storage_capex + total_inverter_capex
+        
+        st.info(f"**Estimated Initial Battery Investment (CAPEX): {total_bat_capex:,.0f} €**")
 
     return {
         "b_cap": b_cap,
@@ -126,6 +146,9 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
         "capex_per_kwh": capex_per_kwh,
         "capex_per_kw": capex_per_kw,
         "opex_pct": opex_pct,
-        "degradation_pct": degradation_pct, # NEU hinzugefügt
+        "degradation_pct": degradation_pct,
+        "replacement_year": replacement_year,    # NEU
+        "replacement_pct": replacement_pct,      # NEU
+        "total_storage_capex": total_storage_capex, # NEU (Wichtig für die spätere Rechnung)
         "total_capex": total_bat_capex
     }

@@ -62,7 +62,17 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
         degradation_pct = hw_params.get('degradation_pct', 0) / 100.0
         opex_yr1 = capex * opex_pct
         
-        if capex == 0: # Check if it's a combined cascade
+        # NEU: Variablen für den Batterietausch vorbereiten
+        rep_year = 99 # Default: Findet nicht statt
+        rep_base_cost = 0.0
+        
+        if capex > 0: # Isoliertes Szenario
+            if 'replacement_year' in hw_params: # Es ist eine Batterie
+                rep_year = hw_params.get('replacement_year', 10)
+                rep_pct = hw_params.get('replacement_pct', 100.0) / 100.0
+                rep_base_cost = hw_params.get('total_storage_capex', 0) * rep_pct
+                
+        elif capex == 0: # Combined Cascade Szenario (Hardware steckt in Unter-Ordnern)
             c1 = hw_params.get('solar', {}).get('total_capex', 0)
             c2 = hw_params.get('battery', {}).get('total_capex', 0)
             o1 = c1 * (hw_params.get('solar', {}).get('opex_pct', 0) / 100.0)
@@ -73,11 +83,17 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
             capex = c1 + c2
             opex_yr1 = o1 + o2
             
-            # SMART BWL: Weighted average degradation based on CAPEX investment split
+            # Weighted average degradation based on CAPEX split
             if capex > 0:
                 degradation_pct = ((c1 * d1) + (c2 * d2)) / capex
             else:
                 degradation_pct = 0.0
+                
+            # Batterietausch aus dem Combined-Objekt extrahieren
+            bat_params = hw_params.get('battery', {})
+            rep_year = bat_params.get('replacement_year', 99)
+            rep_pct = bat_params.get('replacement_pct', 100.0) / 100.0
+            rep_base_cost = bat_params.get('total_storage_capex', 0) * rep_pct
             
         if capex == 0:
             continue # Skip non-hardware scenarios
@@ -120,17 +136,19 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
         # Years 1 to 15: Operations & Compounding
         for y in range(1, 16):
             infl_multiplier = (1 + inflation) ** (y - 1)
-            # NEU: Der Verschleiß-Faktor. Zieht jedes Jahr einen Prozent-Teil von der Leistung ab.
             deg_multiplier = (1 - degradation_pct) ** (y - 1)
             
-            # Die Ersparnisse sinken durch Degradation, werden aber durch Inflation gestützt
             sav_y = grid_savings_yr1 * infl_multiplier * deg_multiplier
-            
-            # OPEX und Sprit steigen stur mit der Inflation weiter an
             opx_y = opex_yr1 * infl_multiplier
             fuel_y = fuel_cost_yr1 * infl_multiplier
             
-            net_y = sav_y - opx_y - fuel_y
+            # NEU: Prüfen, ob in diesem Jahr der Batterietausch fällig ist
+            rep_y = 0.0
+            if y == rep_year:
+                # Ersatzteile unterliegen auch der normalen wirtschaftlichen Inflation
+                rep_y = rep_base_cost * infl_multiplier 
+
+            net_y = sav_y - opx_y - fuel_y - rep_y
             cum_cf += net_y
             
             # Discounting for Net Present Value (NPV)
@@ -138,9 +156,14 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
             cum_npv += pv_y
             
             cf_table.append({
-                "Year": y, "CAPEX (€)": 0, "OPEX (€)": round(-opx_y, 2), "Fuel Cost (€)": round(-fuel_y, 2),
-                "Grid Savings (€)": round(sav_y, 2), "Net Cashflow (€)": round(net_y, 2), 
-                "Cumulative Cashflow (€)": round(cum_cf, 2), "Present Value (PV)": round(pv_y, 2), 
+                "Year": y, 
+                "CAPEX (€)": round(-rep_y, 2), # Wenn rep_y > 0, taucht es hier sauber auf!
+                "OPEX (€)": round(-opx_y, 2), 
+                "Fuel Cost (€)": round(-fuel_y, 2),
+                "Grid Savings (€)": round(sav_y, 2), 
+                "Net Cashflow (€)": round(net_y, 2), 
+                "Cumulative Cashflow (€)": round(cum_cf, 2), 
+                "Present Value (PV)": round(pv_y, 2), 
                 "Cumulative NPV (€)": round(cum_npv, 2)
             })
             
