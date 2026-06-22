@@ -15,7 +15,7 @@ def render_tab3_comparison():
     st.write("## ⚖️ Advanced Comparison Suite")
     
     if 'scenario_vault' not in st.session_state or not st.session_state['scenario_vault']:
-        st.warning("Der Tresor ist leer. Bitte erstelle und speichere Szenarien in Tab 1 oder importiere sie in Tab 4.")
+        st.warning("No saved Scenarios, please create one in Tab1 or import one in Tab 4.")
         return
         
     vault = st.session_state['scenario_vault']
@@ -27,7 +27,7 @@ def render_tab3_comparison():
         st.warning("Keine Basis-Szenarien im Tresor gefunden.")
         return
 
-    st.write("### 🏢 1. Select the Base Scenario")
+    st.write("###  1. Select the Base Scenario")
     selected_base = st.selectbox("Baseline Reference Profile:", options=base_options)
     
     # Autodetect Variants
@@ -47,11 +47,11 @@ def render_tab3_comparison():
     selected_profiles = st.multiselect("Active Scenarios in Comparison:", options=all_options, default=default_selection)
 
     if not selected_profiles:
-        st.warning("Bitte wählen Sie mindestens ein Szenario für den Vergleich aus.")
+        st.warning("please choose at least one scenario for the comparison.")
         return
 
     # --- 1. THE VISUAL GRAPH OVERLAY ---
-    st.write("### 📈 Load Profile Overlay")
+    st.write("### Load Profile Overlay")
     fig = go.Figure()
     
     for name in selected_profiles:
@@ -77,7 +77,7 @@ def render_tab3_comparison():
 
     # --- 2. THE PHYSICAL DELTA-KPI SAVINGS ENGINE ---
     if len(selected_profiles) > 1:
-        st.write("### 🧮 Physical Delta Analysis (Technical Savings)")
+        st.write("### Physical Delta Analysis (Technical Savings)")
         
         base_df = vault[selected_base]['df']
         base_limit = vault[selected_base].get('grid_limit', 50.0)
