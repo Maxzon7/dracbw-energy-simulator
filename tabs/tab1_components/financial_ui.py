@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 def render_financial_inputs(p_fin: dict, active_scenario: str) -> dict:
     """
     Renders the economic baseline inputs inside an expander.
-    Collects grid tariffs, inflation rates, and one-time connection costs.
+    Collects grid tariffs, inflation rates, one-time connection costs, and fuel prices.
     """
     with st.expander("💶 Economic Baseline (Tariffs & Financials)", expanded=True):
         st.write("Define the customer's current energy contracts and setup costs to establish the business-as-usual cost trajectory.")
@@ -15,7 +15,6 @@ def render_financial_inputs(p_fin: dict, active_scenario: str) -> dict:
         energy_charge = c1.number_input("Energy Charge (€/kWh)", value=float(p_fin.get('energy_charge', 0.25)), step=0.01, format="%.3f")
         demand_charge = c2.number_input("Peak Demand Charge (€/kW/year)", value=float(p_fin.get('demand_charge', 120.0)), step=5.0, format="%.1f")
         
-        # NEW: Input for one-time baseline grid connection upgrades (e.g. 63.000 € transformer)
         baseline_grid_capex = c3.number_input(
             "Baseline Grid Upgrade CAPEX (€)", 
             value=float(p_fin.get('baseline_grid_capex', 0.0)), 
@@ -24,16 +23,26 @@ def render_financial_inputs(p_fin: dict, active_scenario: str) -> dict:
             help="One-time costs for a traditional grid connection (e.g., 63,000 € for a new AC5 transformer in the baseline setup)."
         )
         
-        c4, c5, _ = st.columns(3)
+        c4, c5, c6 = st.columns(3)
         feed_in_tariff = c4.number_input("Feed-in Tariff (€/kWh)", value=float(p_fin.get('feed_in_tariff', 0.08)), step=0.01, format="%.3f")
         inflation = c5.number_input("Annual Energy Inflation (%)", value=float(p_fin.get('inflation', 3.0)), step=0.5, format="%.1f")
+        
+        # NEW: Input for the physical fuel burned by the backup generator
+        diesel_price = c6.number_input(
+            "Diesel/Fuel Price (€/L)", 
+            value=float(p_fin.get('diesel_price', 1.50)), 
+            step=0.05, 
+            format="%.2f",
+            help="Cost per liter of fuel for backup generators. Used to financially penalize systems that rely heavily on fossil fuels."
+        )
         
         return {
             "energy_charge": energy_charge,
             "demand_charge": demand_charge,
             "baseline_grid_capex": baseline_grid_capex,
             "feed_in_tariff": feed_in_tariff,
-            "inflation": inflation
+            "inflation": inflation,
+            "diesel_price": diesel_price
         }
 
 def render_financial_projection(df: pd.DataFrame, fin_params: dict):
@@ -85,6 +94,5 @@ def render_financial_projection(df: pd.DataFrame, fin_params: dict):
         )
         st.plotly_chart(fig, use_container_width=True)
         
-        # Fix: Add the base grid capex to the 15-year cumulative sum box
         total_15y = sum(energy_costs) + sum(peak_costs) + base_grid_capex
         st.success(f"💡 **Cumulative Total Costs (15 Years including initial Grid CAPEX): {total_15y:,.0f} €**")
