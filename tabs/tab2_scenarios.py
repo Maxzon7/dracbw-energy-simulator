@@ -7,8 +7,10 @@ import pandas as pd
 from tabs.tab2_components.solar_ui import render_solar_ui
 from tabs.tab2_components.solar_logic import generate_solar_profile
 from tabs.tab2_components.battery_ui import render_battery_ui
-from tabs.tab2_components.generator_ui import render_generator_ui # NEU IMPORTIERT
+from tabs.tab2_components.generator_ui import render_generator_ui 
 from tabs.tab2_components.scenario_engine import run_isolated_scenario
+# NEU IMPORTIERT: Grid Upgrade
+from tabs.tab2_components.grid_upgrade_ui import render_grid_upgrade_ui
 
 # Technical additions & Out-sourced Sub-components
 from tabs.tab2_components.pdf_export import generate_tech_pdf
@@ -50,9 +52,10 @@ def render_tab2_scenarios():
         st.write("###  2. Select Technology")
         
         # NEU: Radio Buttons um den Generator erweitert
+       # NEU: Radio Buttons um Grid Upgrade erweitert
         scenario_mode = st.radio(
             "Choose system configuration:", 
-            ["Solar PV Only", "Battery (BESS) Only", "Generator Only", "Combined (All)"]
+            ["Solar PV Only", "Battery (BESS) Only", "Generator Only", "Grid Upgrade Only", "Combined (All)"]
         )
         st.divider()
         
@@ -70,6 +73,9 @@ def render_tab2_scenarios():
             elif scenario_mode == "Generator Only":
                 with st.expander("Configure Backup Generator", expanded=True):
                     params = render_generator_ui(scenario_id=selected_baseline)
+            elif scenario_mode == "Grid Upgrade Only":
+                with st.expander("Configure Grid Upgrade", expanded=True):
+                    params = render_grid_upgrade_ui(scenario_id=selected_baseline)
                     
             else: # Combined Mode (Die ultimative Kaskade)
                 with st.expander("Configure Solar PV", expanded=False):
@@ -109,6 +115,19 @@ def render_tab2_scenarios():
             elif scenario_mode == "Generator Only":
                 # Isolierte Generator-Berechnung auf der Baseline
                 calculated_df = simulate_generator_logic(baseline_df.copy(), grid_limit, params, res)
+            
+            elif scenario_mode == "Grid Upgrade Only":
+                # Grid Upgrade changes nothing about the load, it just moves the limit up!
+                calculated_df = baseline_df.copy()
+                calculated_df['final_grid_load_kw'] = calculated_df['consumption_kw']
+                
+                # Zero out hardware interactions just to be safe
+                if 'battery_action_kw' not in calculated_df.columns:
+                    calculated_df['battery_action_kw'] = 0.0
+                if 'solar_gen_kw' not in calculated_df.columns:
+                    calculated_df['solar_gen_kw'] = 0.0
+                if 'generator_action_kw' not in calculated_df.columns:
+                    calculated_df['generator_action_kw'] = 0.0
                 
             else:
                 # DIE KASKADE: Solar -> Batterie -> Generator
@@ -211,7 +230,19 @@ def render_tab2_scenarios():
                 vault_button_text = "⚠️ OVERWRITE Existing Variant"
         
         if st.button(vault_button_text, type="primary", use_container_width=True, disabled=save_disabled):
-            base_grid_limit = vault[selected_baseline].get('grid_limit', 50.0)
+            # If we explicitly upgraded the grid, save the new limit to the vault!
+            if current_mode == "Grid Upgrade Only":
+                active_grid_limit = current_params.get("new_grid_limit_kw", 250.0)
+            else:
+                active_grid_limit = vault[selected_baseline].get('grid_limit', 50.0)
+
+            vault[sub_scenario_name] = {
+                "df": results, 
+                "parent": selected_baseline, 
+                "data_source": current_mode, 
+                "grid_limit": active_grid_limit, # <-- Das hier verwendet jetzt das korrekte Limit!
+                "params": {"is_hardware": True, "hardware_params": current_params}
+            }
             vault[sub_scenario_name] = {
                 "df": results, 
                 "parent": selected_baseline, 
