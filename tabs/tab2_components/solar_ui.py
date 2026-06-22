@@ -62,11 +62,11 @@ def render_solar_ui(scenario_id: str) -> dict:
             key=f"sol_therm_{scenario_id}"
         )
         
-    # --- NEU: Financial Estimates (CAPEX/OPEX) ---
+    # --- NEU: Financial Estimates (CAPEX/OPEX & Degradation) ---
     st.divider()
-    with st.expander("$$ Financial Estimates (CAPEX & OPEX)", expanded=False):
-        st.write("Configure the estimated capital expenditure and maintenance costs for the ROI analysis.")
-        c_fin1, c_fin2 = st.columns(2)
+    with st.expander("$$ Financial Estimates (CAPEX, OPEX & Degradation)", expanded=False):
+        st.write("Configure the estimated capital expenditure, maintenance costs, and physical wear for the ROI analysis.")
+        c_fin1, c_fin2, c_fin3 = st.columns(3)
         
         capex_per_kwp = c_fin1.number_input(
             "CAPEX (€ per kWp)", 
@@ -78,6 +78,12 @@ def render_solar_ui(scenario_id: str) -> dict:
             min_value=0.0, max_value=10.0, value=1.0, step=0.1,
             help="Estimated yearly maintenance, insurance, and cleaning costs.",
             key=f"sol_opex_{scenario_id}"
+        )
+        degradation_pct = c_fin3.number_input(
+            "Annual Degradation (%)", 
+            min_value=0.0, max_value=5.0, value=0.5, step=0.1,
+            help="Annual physical performance loss of the solar panels.",
+            key=f"sol_deg_{scenario_id}"
         )
         
         total_solar_capex = installed_kwp * capex_per_kwp
@@ -93,5 +99,6 @@ def render_solar_ui(scenario_id: str) -> dict:
         "thermal_loss": thermal_loss,
         "capex_per_kwp": capex_per_kwp,
         "opex_pct": opex_pct,
+        "degradation_pct": degradation_pct, # NEU hinzugefügt
         "total_capex": total_solar_capex
     }

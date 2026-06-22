@@ -59,6 +59,7 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
         # Safely extract CAPEX/OPEX depending on Isolated vs. Combined mode
         capex = hw_params.get('total_capex', 0)
         opex_pct = hw_params.get('opex_pct', 0) / 100.0
+        degradation_pct = hw_params.get('degradation_pct', 0) / 100.0
         opex_yr1 = capex * opex_pct
         
         if capex == 0: # Check if it's a combined cascade
@@ -66,8 +67,17 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
             c2 = hw_params.get('battery', {}).get('total_capex', 0)
             o1 = c1 * (hw_params.get('solar', {}).get('opex_pct', 0) / 100.0)
             o2 = c2 * (hw_params.get('battery', {}).get('opex_pct', 0) / 100.0)
+            d1 = hw_params.get('solar', {}).get('degradation_pct', 0) / 100.0
+            d2 = hw_params.get('battery', {}).get('degradation_pct', 0) / 100.0
+            
             capex = c1 + c2
             opex_yr1 = o1 + o2
+            
+            # SMART BWL: Weighted average degradation based on CAPEX investment split
+            if capex > 0:
+                degradation_pct = ((c1 * d1) + (c2 * d2)) / capex
+            else:
+                degradation_pct = 0.0
             
         if capex == 0:
             continue # Skip non-hardware scenarios
@@ -80,8 +90,7 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
         sub_grid_bill_yr1 = (sub_kwh * e_price) + (sub_peak * p_price) - (sub_export * fit)
         grid_savings_yr1 = base_grid_bill_yr1 - sub_grid_bill_yr1
         
-        # --- NEW: GENERATOR FUEL COSTS ---
-        # Get total fuel burned from the simulation and multiply by current diesel price
+        # GENERATOR FUEL COSTS
         annual_fuel_l = sub_df.get('generator_fuel_l', pd.Series([0])).sum()
         fuel_cost_yr1 = annual_fuel_l * diesel_price
         
@@ -106,15 +115,18 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
             "Cumulative NPV (€)": round(cum_npv, 2)
         })
         
-        # If avoided costs completely cover the new investment, project breaks even on Day 1
         break_even_yr = 0 if cum_cf >= 0 else "> 15"
         
         # Years 1 to 15: Operations & Compounding
         for y in range(1, 16):
             infl_multiplier = (1 + inflation) ** (y - 1)
+            # NEU: Der Verschleiß-Faktor. Zieht jedes Jahr einen Prozent-Teil von der Leistung ab.
+            deg_multiplier = (1 - degradation_pct) ** (y - 1)
             
-            # Inflate grid savings, maintenance, and fuel prices over time
-            sav_y = grid_savings_yr1 * infl_multiplier
+            # Die Ersparnisse sinken durch Degradation, werden aber durch Inflation gestützt
+            sav_y = grid_savings_yr1 * infl_multiplier * deg_multiplier
+            
+            # OPEX und Sprit steigen stur mit der Inflation weiter an
             opx_y = opex_yr1 * infl_multiplier
             fuel_y = fuel_cost_yr1 * infl_multiplier
             
@@ -132,7 +144,6 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
                 "Cumulative NPV (€)": round(cum_npv, 2)
             })
             
-            # Check for Break-Even Point
             if break_even_yr == "> 15" and cum_cf >= 0:
                 break_even_yr = y
                 

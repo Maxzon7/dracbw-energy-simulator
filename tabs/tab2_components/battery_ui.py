@@ -81,11 +81,11 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
             key=f"bat_soc_init_{scenario_id}"
         )
 
-    # --- Financial Estimates (CAPEX/OPEX) ---
+    # --- Financial Estimates (CAPEX/OPEX & Degradation) ---
     st.divider()
-    with st.expander("$$ Financial Estimates (CAPEX & OPEX)", expanded=False):
-        st.write("Configure the estimated capital expenditure and maintenance costs for the ROI analysis.")
-        c_fin1, c_fin2, c_fin3 = st.columns(3)
+    with st.expander("$$ Financial Estimates (CAPEX, OPEX & Degradation)", expanded=False):
+        st.write("Configure the estimated capital expenditure, maintenance costs, and physical wear for the ROI analysis.")
+        c_fin1, c_fin2, c_fin3, c_fin4 = st.columns(4)
         
         capex_per_kwh = c_fin1.number_input(
             "Storage CAPEX (€/kWh)", 
@@ -98,10 +98,16 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
             key=f"bat_capex_kw_{scenario_id}"
         )
         opex_pct = c_fin3.number_input(
-            "Annual OPEX (% of CAPEX)", 
+            "Annual OPEX (%)", 
             min_value=0.0, max_value=10.0, value=1.5, step=0.1,
             help="Estimated yearly maintenance, insurance, and cooling costs.",
             key=f"bat_opex_{scenario_id}"
+        )
+        degradation_pct = c_fin4.number_input(
+            "Annual Degradation (%)", 
+            min_value=0.0, max_value=10.0, value=1.5, step=0.1,
+            help="Annual capacity loss of the battery cells (typically 1.5% to 2.5%).",
+            key=f"bat_deg_{scenario_id}"
         )
         
         total_bat_capex = (b_cap * capex_per_kwh) + (b_pwr * capex_per_kw)
@@ -120,5 +126,6 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
         "capex_per_kwh": capex_per_kwh,
         "capex_per_kw": capex_per_kw,
         "opex_pct": opex_pct,
+        "degradation_pct": degradation_pct, # NEU hinzugefügt
         "total_capex": total_bat_capex
     }
