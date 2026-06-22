@@ -7,13 +7,16 @@ import pandas as pd
 from tabs.tab2_components.solar_ui import render_solar_ui
 from tabs.tab2_components.solar_logic import generate_solar_profile
 from tabs.tab2_components.battery_ui import render_battery_ui
+from tabs.tab2_components.generator_ui import render_generator_ui # NEU IMPORTIERT
 from tabs.tab2_components.scenario_engine import run_isolated_scenario
 
 # Technical additions & Out-sourced Sub-components
 from tabs.tab2_components.pdf_export import generate_tech_pdf
 from tabs.tab2_components.feasibility_check import render_feasibility_check
 from tabs.tab2_components.performance_matrix import render_performance_matrix
-from logic.energy_logic import simulate_battery_logic
+
+# NEU: Wir importieren jetzt auch unsere Generator-Logik
+from logic.energy_logic import simulate_battery_logic, simulate_generator_logic 
 
 def render_tab2_scenarios():
     """
@@ -46,13 +49,15 @@ def render_tab2_scenarios():
     with col_input:
         st.write("###  2. Select Technology")
         
-        # The Radio-Button stays OUTSIDE the form so it can dynamically change the UI below
-        scenario_mode = st.radio("Choose system configuration:", ["Solar PV Only", "Battery (BESS) Only", "Combined"])
+        # NEU: Radio Buttons um den Generator erweitert
+        scenario_mode = st.radio(
+            "Choose system configuration:", 
+            ["Solar PV Only", "Battery (BESS) Only", "Generator Only", "Combined (All)"]
+        )
         st.divider()
         
         # --- BATCHING FORM: Stops slider-spam from reloading the app repeatedly ---
         with st.form(key=f"sim_form_{scenario_mode}"):
-            # --- UI in Expanders (to save space) ---
             params = {}
             if scenario_mode == "Solar PV Only":
                 with st.expander("Configure Solar PV", expanded=True):
@@ -60,15 +65,19 @@ def render_tab2_scenarios():
                     
             elif scenario_mode == "Battery (BESS) Only":
                 with st.expander("Configure Battery Storage", expanded=True):
-                    # Pass the grid_limit as default shaving threshold
                     params = render_battery_ui(scenario_id=selected_baseline, default_grid_limit=grid_limit) 
+            
+            elif scenario_mode == "Generator Only":
+                with st.expander("Configure Backup Generator", expanded=True):
+                    params = render_generator_ui(scenario_id=selected_baseline)
                     
-            else: # Combined Mode
-                with st.expander("Configure Solar PV", expanded=True):
+            else: # Combined Mode (Die ultimative Kaskade)
+                with st.expander("Configure Solar PV", expanded=False):
                     params['solar'] = render_solar_ui(scenario_id=f"{selected_baseline}_c_sol")
-                with st.expander("Configure Battery Storage", expanded=True):
-                    # Pass the grid_limit as default shaving threshold
+                with st.expander("Configure Battery Storage", expanded=False):
                     params['battery'] = render_battery_ui(scenario_id=f"{selected_baseline}_c_bat", default_grid_limit=grid_limit)
+                with st.expander("Configure Backup Generator", expanded=False):
+                    params['generator'] = render_generator_ui(scenario_id=f"{selected_baseline}_c_gen")
                 
             st.divider()
 
@@ -77,15 +86,14 @@ def render_tab2_scenarios():
                 col_opt = st.color_picker("Optimized Load Color", "#00CC96")
                 col_soc = st.color_picker("Battery SoC Color", "#636EFA")
                 col_act = st.color_picker("Battery Action Color", "#FFA15A")
+                col_gen = st.color_picker("Generator Output Color", "#8B0000") # Dunkelrot für den Diesel
             
             st.divider()
             
-            # Dynamic button label depending on active session simulation state
             sim_button_text = "🚀 Run Simulation"
             if 'active_sim_results' in st.session_state and st.session_state['active_sim_results'] is not None:
                 sim_button_text = "🔄 Rerun Simulation"
                 
-            # The submit button triggers the single, final execution
             run_sim = st.form_submit_button(sim_button_text, type="primary", use_container_width=True)
 
     # --- 2. PIPELINE EXECUTION ENGINE ---
@@ -94,11 +102,19 @@ def render_tab2_scenarios():
             if scenario_mode == "Solar PV Only":
                 calculated_df = generate_solar_profile(baseline_df, project_metadata, params)
                 calculated_df['final_grid_load_kw'] = calculated_df['net_load_kw']
+                
             elif scenario_mode == "Battery (BESS) Only":
                 calculated_df = run_isolated_scenario(baseline_df, "Battery (Peak Shaving)", params, grid_limit, res)
+                
+            elif scenario_mode == "Generator Only":
+                # Isolierte Generator-Berechnung auf der Baseline
+                calculated_df = simulate_generator_logic(baseline_df.copy(), grid_limit, params, res)
+                
             else:
-                solar_df = generate_solar_profile(baseline_df, project_metadata, params['solar'])
-                calculated_df = simulate_battery_logic(solar_df, grid_limit, params['battery'], res)
+                # DIE KASKADE: Solar -> Batterie -> Generator
+                df_1 = generate_solar_profile(baseline_df, project_metadata, params['solar'])
+                df_2 = simulate_battery_logic(df_1, grid_limit, params['battery'], res)
+                calculated_df = simulate_generator_logic(df_2, grid_limit, params['generator'], res)
             
             st.session_state['active_sim_results'] = calculated_df
             st.session_state['active_sim_mode'] = scenario_mode
@@ -117,19 +133,32 @@ def render_tab2_scenarios():
             render_feasibility_check(results, grid_limit, current_params, current_mode)
             
             fig_load = go.Figure()
-            # HIER DIE ERSTEN ZWEI SCATTERGL
+            
+            # Basis-Linien
             fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['consumption_kw'], name="Original Demand", line=dict(color=col_raw, width=1)))
             fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['final_grid_load_kw'], name="Final Grid Demand", line=dict(color=col_opt, width=2)))
             
-            if current_mode in ["Solar PV Only", "Combined"] and 'solar_gen_kw' in results.columns:
-                # HIER DAS DRITTE SCATTERGL
+            # Solar Einblendung
+            if current_mode in ["Solar PV Only", "Combined (All)"] and 'solar_gen_kw' in results.columns:
                 fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['solar_gen_kw'], name="Solar Yield", line=dict(color='#FFC107', width=1), fill='tozeroy'))
+            
+            # Generator Einblendung (NEU)
+            if current_mode in ["Generator Only", "Combined (All)"] and 'generator_action_kw' in results.columns:
+                fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['generator_action_kw'], name="Generator Output", line=dict(color=col_gen, width=1), fill='tozeroy'))
                                           
             fig_load.add_hline(y=grid_limit, line_dash="dash", line_color="red", annotation_text="Grid Limit")
             fig_load.update_layout(height=400, yaxis_title="kW", margin=dict(t=10, b=10), legend=dict(orientation="h", y=1.1))
             st.plotly_chart(fig_load, use_container_width=True)
 
-            if current_mode in ["Battery (BESS) Only", "Combined"]:
+            # --- DIESEL VERBRAUCHS ANZEIGE (NEU) ---
+            if current_mode in ["Generator Only", "Combined (All)"] and 'generator_fuel_l' in results.columns:
+                total_fuel = results['generator_fuel_l'].sum()
+                if total_fuel > 0:
+                    st.error(f"🛢️ **Total Diesel Fuel Consumed by Generator:** {total_fuel:,.1f} Liters")
+                else:
+                    st.success("🌱 No generator fuel required! The system handled all peaks.")
+
+            if current_mode in ["Battery (BESS) Only", "Combined (All)"]:
                 c_left, c_right = st.columns(2)
                 with c_left:
                     st.write("**Battery Charge/Discharge (kW)**")
@@ -140,7 +169,6 @@ def render_tab2_scenarios():
                 with c_right:
                     st.write("**Battery State of Charge (kWh)**")
                     fig_soc = go.Figure()
-                    # HIER DAS VIERTE SCATTERGL
                     fig_soc.add_trace(go.Scattergl(x=results['timestamp'], y=results['battery_soc_kwh'], fill='tozeroy', line=dict(color=col_soc)))
                     fig_soc.update_layout(height=250, margin=dict(t=10, b=10))
                     st.plotly_chart(fig_soc, use_container_width=True)
@@ -172,7 +200,6 @@ def render_tab2_scenarios():
         save_disabled = False
         overwrite = False
         
-        # Default safe configuration text for the vault action
         vault_button_text = "🚀 Put variant in the vault"
         
         if name_exists:
@@ -181,13 +208,10 @@ def render_tab2_scenarios():
             if not overwrite:
                 save_disabled = True
             else:
-                # Dynamic visual text upgrade to signal structural changes
                 vault_button_text = "⚠️ OVERWRITE Existing Variant"
         
         if st.button(vault_button_text, type="primary", use_container_width=True, disabled=save_disabled):
-            
             base_grid_limit = vault[selected_baseline].get('grid_limit', 50.0)
-            
             vault[sub_scenario_name] = {
                 "df": results, 
                 "parent": selected_baseline, 
@@ -196,5 +220,4 @@ def render_tab2_scenarios():
                 "params": {"is_hardware": True, "hardware_params": current_params}
             }
             st.session_state['scenario_vault'] = vault
-            
             st.success(f"✅ '{sub_scenario_name}' has been successfully saved as a variant of '{selected_baseline}' !")
