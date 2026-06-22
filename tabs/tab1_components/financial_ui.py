@@ -6,22 +6,32 @@ import plotly.graph_objects as go
 def render_financial_inputs(p_fin: dict, active_scenario: str) -> dict:
     """
     Renders the economic baseline inputs inside an expander.
-    Collects grid tariffs and inflation rates.
+    Collects grid tariffs, inflation rates, and one-time connection costs.
     """
     with st.expander("💶 Economic Baseline (Tariffs & Financials)", expanded=True):
-        st.write("Define the customer's current energy contracts to establish the business-as-usual cost trajectory.")
+        st.write("Define the customer's current energy contracts and setup costs to establish the business-as-usual cost trajectory.")
         
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns(3)
         energy_charge = c1.number_input("Energy Charge (€/kWh)", value=float(p_fin.get('energy_charge', 0.25)), step=0.01, format="%.3f")
         demand_charge = c2.number_input("Peak Demand Charge (€/kW/year)", value=float(p_fin.get('demand_charge', 120.0)), step=5.0, format="%.1f")
         
-        c3, c4 = st.columns(2)
-        feed_in_tariff = c3.number_input("Feed-in Tariff (€/kWh)", value=float(p_fin.get('feed_in_tariff', 0.08)), step=0.01, format="%.3f")
-        inflation = c4.number_input("Annual Energy Inflation (%)", value=float(p_fin.get('inflation', 3.0)), step=0.5, format="%.1f")
+        # NEW: Input for one-time baseline grid connection upgrades (e.g. 63.000 € transformer)
+        baseline_grid_capex = c3.number_input(
+            "Baseline Grid Upgrade CAPEX (€)", 
+            value=float(p_fin.get('baseline_grid_capex', 0.0)), 
+            step=1000.0, 
+            format="%.1f",
+            help="One-time costs for a traditional grid connection (e.g., 63,000 € for a new AC5 transformer in the baseline setup)."
+        )
+        
+        c4, c5, _ = st.columns(3)
+        feed_in_tariff = c4.number_input("Feed-in Tariff (€/kWh)", value=float(p_fin.get('feed_in_tariff', 0.08)), step=0.01, format="%.3f")
+        inflation = c5.number_input("Annual Energy Inflation (%)", value=float(p_fin.get('inflation', 3.0)), step=0.5, format="%.1f")
         
         return {
             "energy_charge": energy_charge,
             "demand_charge": demand_charge,
+            "baseline_grid_capex": baseline_grid_capex,
             "feed_in_tariff": feed_in_tariff,
             "inflation": inflation
         }
@@ -43,6 +53,7 @@ def render_financial_projection(df: pd.DataFrame, fin_params: dict):
         
         e_price = fin_params.get('energy_charge', 0.25)
         p_price = fin_params.get('demand_charge', 120.0)
+        base_grid_capex = fin_params.get('baseline_grid_capex', 0.0)
         inflation = fin_params.get('inflation', 3.0) / 100.0
         
         base_energy_cost = annual_energy_kwh * e_price
@@ -65,7 +76,7 @@ def render_financial_projection(df: pd.DataFrame, fin_params: dict):
         
         fig.update_layout(
             barmode='stack',
-            title=f"Base Year 1 Costs: {base_energy_cost + base_peak_cost:,.0f} €",
+            title=f"Base Year 1 Operating Costs: {base_energy_cost + base_peak_cost:,.0f} €",
             xaxis_title="Operating Year",
             yaxis_title="Total Costs (€)",
             height=350,
@@ -74,5 +85,6 @@ def render_financial_projection(df: pd.DataFrame, fin_params: dict):
         )
         st.plotly_chart(fig, use_container_width=True)
         
-        total_15y = sum(energy_costs) + sum(peak_costs)
-        st.success(f"💡 **Cumulative Total Costs (15 Years): {total_15y:,.0f} €**")
+        # Fix: Add the base grid capex to the 15-year cumulative sum box
+        total_15y = sum(energy_costs) + sum(peak_costs) + base_grid_capex
+        st.success(f"💡 **Cumulative Total Costs (15 Years including initial Grid CAPEX): {total_15y:,.0f} €**")

@@ -15,7 +15,6 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
     with col_info:
         st.info("Discounted Cash Flow (DCF) projection over 15 years including CAPEX, OPEX, grid tariffs, and compounding energy inflation.")
     with col_wacc:
-        # Der Kalkulationszinssatz für den Barwert (NPV)
         discount_rate = st.number_input(
             "Discount Rate / WACC (%)", 
             value=5.0, step=0.5, 
@@ -29,6 +28,7 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
     
     e_price = base_fin.get('energy_charge', 0.25)
     p_price = base_fin.get('demand_charge', 120.0)
+    base_grid_capex = base_fin.get('baseline_grid_capex', 0.0) # NEW: Unpack avoided grid capex
     fit = base_fin.get('feed_in_tariff', 0.08)
     inflation = base_fin.get('inflation', 3.0) / 100.0
     
@@ -81,17 +81,26 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
         
         # --- 15-YEAR CASHFLOW CASCADING MATHEMATICS ---
         cf_table = []
-        cum_cf = -capex
-        cum_npv = -capex
         
-        # Year 0: Initial Investment
+        # FIX: Net Year 0 cashflow accounts for avoided grid upgrade costs minus new hardware investments
+        net_year0 = base_grid_capex - capex
+        cum_cf = net_year0
+        cum_npv = net_year0
+        
+        # Year 0: Initial Investment / Avoided Baseline Cost
         cf_table.append({
-            "Year": 0, "CAPEX (€)": round(-capex, 2), "OPEX (€)": 0, "Gross Savings (€)": 0,
-            "Net Cashflow (€)": round(-capex, 2), "Cumulative Cashflow (€)": round(cum_cf, 2), 
-            "Present Value (PV)": round(-capex, 2), "Cumulative NPV (€)": round(cum_npv, 2)
+            "Year": 0, 
+            "CAPEX (€)": round(-capex, 2), 
+            "OPEX (€)": 0, 
+            "Gross Savings (€)": round(base_grid_capex, 2),
+            "Net Cashflow (€)": round(net_year0, 2), 
+            "Cumulative Cashflow (€)": round(cum_cf, 2), 
+            "Present Value (PV)": round(net_year0, 2), 
+            "Cumulative NPV (€)": round(cum_npv, 2)
         })
         
-        break_even_yr = "> 15"
+        # If avoided costs completely cover the new investment, project breaks even on Day 1
+        break_even_yr = 0 if cum_cf >= 0 else "> 15"
         
         # Years 1 to 15: Operations & Compounding
         for y in range(1, 16):
@@ -101,7 +110,7 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
             net_y = sav_y - opx_y
             cum_cf += net_y
             
-            # Discounting for Barwert (NPV)
+            # Discounting for Net Present Value (NPV)
             pv_y = net_y / ((1 + discount_rate) ** y)
             cum_npv += pv_y
             
@@ -115,7 +124,7 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
             if break_even_yr == "> 15" and cum_cf >= 0:
                 break_even_yr = y
                 
-        # --- SAVE FINANCIALS DIRECTLY INTO THE ACTIVE VAULT (.drac ready) ---
+        # --- SAVE FINANCIALS DIRECTLY INTO THE ACTIVE VAULT ---
         vault[name]['financial_metrics'] = {
             "discount_rate_used": discount_rate,
             "roi_years": break_even_yr,
@@ -136,7 +145,7 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
             "Variant Scenario": name,
             "Total CAPEX": f"- {capex:,.0f} €",
             "Year 1 Net Savings": f"+ {gross_savings_yr1 - opex_yr1:,.0f} €",
-            "Break-Even (ROI)": f"{break_even_yr} Years",
+            "Break-Even (ROI)": f"{break_even_yr} Years" if isinstance(break_even_yr, str) or break_even_yr > 0 else "Instant (Day 1)",
             "15Y Cum. Cashflow": f"{cum_cf:,.0f} €",
             "15Y Net Present Value (NPV)": f"{cum_npv:,.0f} €"
         })
@@ -145,7 +154,6 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
         
     # --- RENDER OUTPUTS ---
     if summary_data:
-        # 1. The visual Chart
         fig.update_layout(
             height=400, margin=dict(l=0, r=0, t=10, b=0),
             xaxis_title="Operating Year", yaxis_title="Cumulative Net Cashflow (€)",
@@ -153,25 +161,21 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
         )
         st.plotly_chart(fig, use_container_width=True)
         
-        # 2. The CFO Summary Matrix
         st.write("#### 🏆 Financial Performance Summary")
         st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
         
-        # 3. The Detailed 15-Year Cashflow Tables (Zahlungsreihen)
         st.divider()
         st.write("#### 📊 Detailed 15-Year Cashflow Series")
         st.info("Analyze the exact yearly progression of savings, operational costs, and discounted values.")
         
-        # Create dynamic tabs for each variant so the user can easily switch between them
         variant_names = list(detailed_tables.keys())
         ui_tabs = st.tabs([f"🌿 {n}" for n in variant_names])
         
         for idx, t_name in enumerate(variant_names):
             with ui_tabs[idx]:
                 df_cf = pd.DataFrame(detailed_tables[t_name])
-                # Format specific columns as currencies for clean UI viewing
                 st.dataframe(
-                    df_cf.style.format({col: "{:,.0f} €" for col in df_cf.columns if "€" in col}),
+                    df_cf.style.format({col: "{:,.0f} €" for col in df_cf.columns if "€" in col or "PV" in col}),
                     use_container_width=True, hide_index=True
                 )
     else:

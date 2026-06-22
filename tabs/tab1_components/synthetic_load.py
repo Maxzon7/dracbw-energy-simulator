@@ -49,19 +49,28 @@ def synthetic_load(monthly_consumption: float,
     active_mask = op_mask & working_days_mask
     profile[active_mask] = 1.0
     
-    # --- BEDINGTE SCHWANKUNGEN (NOISE) ---
+    # --- NOISE GENERATION ---
     if noise_enabled:
-        # Wandelt Prozentwert (z.B. 5%) in die mathematische Standardabweichung (0.05) um
+        # Converts percentage (e.g., 5%) into standard deviation (0.05)
         std_dev = noise_percentage / 100.0
         noise = np.random.normal(1.0, std_dev, len(profile))
         profile = profile * noise
     
-    # Untergrenze absichern, damit Lasten nicht negativ werden
+    # Secure the lower boundary to prevent negative loads
     profile = np.clip(profile, a_min=base_factor * 0.5, a_max=None)
     
-    # Auf Ziel-Verbrauch normieren (Leistung / 4 = Energie für 15-Min-Intervalle)
+    # --- THE FIX: 30-DAY STANDARD MONTH CALIBRATION ---
+    # Calculate the exact mathematical days in this specific month
+    actual_days_in_month = len(df) / (24 * 4)
+    
+    # Adjust the target consumption to a 30-day standard. 
+    # Example: February (28 days) will get 28/30 of the inputted monthly consumption.
+    # This ensures kW peaks remain identical across all months regardless of length.
+    adjusted_monthly_consumption = monthly_consumption * (actual_days_in_month / 30.0)
+    
+    # Normalize the profile based on the adjusted energy target (Power / 4 = Energy per 15-min)
     current_monthly_energy = np.sum(profile) / 4.0
-    scaling_factor = monthly_consumption / current_monthly_energy
+    scaling_factor = adjusted_monthly_consumption / current_monthly_energy
     
     df['consumption_kw'] = profile * scaling_factor
     df = df.drop(columns=['hour', 'dayofweek'])
