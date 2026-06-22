@@ -88,7 +88,6 @@ def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: 
     return df_clean.resample(resample_rule).mean(numeric_only=True).reset_index().dropna()
 
 # --- DIE UNTEREN FUNKTIONEN BLEIBEN OHNE CACHE ---
-# (Da sie sich sofort anpassen müssen, wenn man die Batterie-Parameter ändert)
 
 def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, interval_min: int) -> dict:
     """
@@ -223,5 +222,61 @@ def simulate_battery_logic(df: pd.DataFrame, grid_limit: float, b_params: dict, 
     df['battery_soc_kwh'] = soc_history
     df['battery_action_kw'] = action_history
     df['final_grid_load_kw'] = final_grid_load
+    
+    return df
+
+def simulate_generator_logic(df: pd.DataFrame, grid_limit: float, gen_params: dict, res: int = 15) -> pd.DataFrame:
+    """
+    Simulates a backup generator (Diesel/Gas) that acts as the absolute last resort.
+    It automatically detects if a battery or solar system already attempted to reduce the load
+    and only kicks in for the remaining deficit that would blow the grid fuse.
+    """
+    res_factor = 60 / res # 4 for 15-min intervals (kW -> kWh conversion)
+    
+    # Extract operational parameters with safe defaults
+    gen_pwr = gen_params.get('gen_pwr', 100.0)             # Max Generator kW Output
+    fuel_rate = gen_params.get('fuel_l_per_kwh', 0.28)     # Average liters of fuel per kWh generated
+    
+    gen_action_history = []
+    fuel_history = []
+    new_final_grid_load = []
+    
+    # Intelligent Source Detection: 
+    # If a battery ran before, we use its final load. If not, we take solar or raw consumption.
+    if 'final_grid_load_kw' in df.columns:
+        load_source_col = 'final_grid_load_kw'
+    elif 'net_load_kw' in df.columns:
+        load_source_col = 'net_load_kw'
+    else:
+        load_source_col = 'consumption_kw'
+        
+    for _, row in df.iterrows():
+        current_load = row[load_source_col]
+        generator_action_kw = 0.0
+        fuel_consumed_l = 0.0
+        
+        # TRIGGER: The grid is still bleeding (Over the limit!)
+        if current_load > grid_limit:
+            required_gen_kw = current_load - grid_limit
+            
+            # The generator fires up, but is physically limited to its max capacity (gen_pwr)
+            generator_action_kw = min(required_gen_kw, gen_pwr)
+            
+            # Calculate the fuel burned in this 15-minute timeframe
+            # Energy (kWh) = Power (kW) / res_factor
+            fuel_consumed_l = (generator_action_kw / res_factor) * fuel_rate
+            
+        gen_action_history.append(generator_action_kw)
+        fuel_history.append(fuel_consumed_l)
+        
+        # The ultimate final grid load is what's left AFTER the generator has helped
+        new_final_grid_load.append(current_load - generator_action_kw)
+        
+    # Append the results directly to the dataframe for seamless UI plotting
+    df['generator_action_kw'] = gen_action_history
+    df['generator_fuel_l'] = fuel_history
+    
+    # WE OVERWRITE the final_grid_load_kw because the generator has now modified the reality
+    df['final_grid_load_kw'] = new_final_grid_load 
     
     return df
