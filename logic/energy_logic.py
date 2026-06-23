@@ -17,42 +17,53 @@ def load_and_clean_csv(file_obj) -> pd.DataFrame:
     df = pd.read_csv(file_obj, sep=None, engine='python', skiprows=skip_rows)
     return df
 
-@st.cache_data(show_spinner="Formatiere Zeitstempel und erstelle Intervalle (dauert nur einmalig)...")
-def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: str = None, power_col: str = None, unit: str = "W", use_float64: bool = False) -> pd.DataFrame:
+@st.cache_data(show_spinner="Formatiere Zeitstempel und erstelle Intervalle...")
+def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: str = None, power_col = None, unit: str = "W", use_float64: bool = False) -> pd.DataFrame:
     """
     Standardizes the raw meter data into the required simulation format.
-    Dynamically maps available columns or uses user-selected columns from the popup dialog.
-    Cached to prevent massive CPU load when re-parsing 8760+ datetime rows.
+    UPGRADED: Now supports multiple sub-meters. Converts each, retains them in the dataframe, 
+    and generates an aggregated 'consumption_kw' total column for system stability.
     """
+    # 1. Handle fallback logic if no columns were explicitly provided
     if not time_col or not power_col:
         possible_time_cols = ['Time', 'time', 'timestamp', 'Datum', 'Date', 'zeit', 'datum']
         possible_power_cols = ['Totaal_Vermogen_(System_Power)', 'WATT_TOT', 'Total_Power', 'System_Power', 'consumption_kw', 'leistung']
+        
         for col in df.columns:
             clean_col = str(col).strip()
             if not time_col and clean_col in possible_time_cols:
                 time_col = col
             if not power_col and clean_col in possible_power_cols:
-                power_col = col
+                power_col = [col] # Initialize as a list for consistency
             
     if not time_col or not power_col:
         raise ValueError("Erforderliche Spalten für Zeit oder Leistung nicht gefunden. Bitte nutze die manuelle Zuordnung im Popup.")
         
+    # Ensure power_col is treated as a list
+    power_cols = power_col if isinstance(power_col, list) else [power_col]
+        
     try:
-        df_clean = df[[time_col, power_col]].copy()
-        df_clean.columns = ['timestamp', 'consumption_kw']
+        cols_to_extract = [time_col] + power_cols
+        df_clean = df[cols_to_extract].copy()
+        df_clean.rename(columns={time_col: 'timestamp'}, inplace=True)
     except Exception as e:
         raise ValueError(f"Fehler bei der Spaltenextraktion: {e}")
     
-    if df_clean['consumption_kw'].dtype == object:
-        df_clean['consumption_kw'] = df_clean['consumption_kw'].astype(str).str.replace(',', '.')
+    # Process each selected power column individually
+    for col in power_cols:
+        if df_clean[col].dtype == object:
+            df_clean[col] = df_clean[col].astype(str).str.replace(',', '.')
+            
+        df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
         
-    df_clean['consumption_kw'] = pd.to_numeric(df_clean['consumption_kw'], errors='coerce')
-    
-    if unit == "W":
-        df_clean['consumption_kw'] = df_clean['consumption_kw'] / 1000.0 
-        
-    if not use_float64:
-        df_clean['consumption_kw'] = df_clean['consumption_kw'].astype('float32')
+        if unit == "W":
+            df_clean[col] = df_clean[col] / 1000.0 
+            
+        if not use_float64:
+            df_clean[col] = df_clean[col].astype('float32')
+            
+    # CRITICAL STABILITY FIX: Create the master column required by the rest of the application
+    df_clean['consumption_kw'] = df_clean[power_cols].sum(axis=1)
     
     df_clean['timestamp'] = pd.to_datetime(df_clean['timestamp'], errors='coerce')
     df_clean.dropna(subset=['timestamp', 'consumption_kw'], inplace=True)
@@ -60,7 +71,6 @@ def process_consumption_data(df: pd.DataFrame, interval_minutes: int, time_col: 
     
     resample_rule = f"{interval_minutes}min"
     return df_clean.resample(resample_rule).mean(numeric_only=True).reset_index().dropna()
-
 def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, interval_min: int) -> dict:
     """
     Calculates the EXACT minimum battery specs needed using an 'Infinite Ghost Battery' algorithm.

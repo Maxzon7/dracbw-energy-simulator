@@ -19,7 +19,7 @@ def guess_columns(raw_cols):
             power_col = col
     return time_col, power_col
 
-@st.dialog("📋 Open CSV File & Map Columns", width="large")
+@@st.dialog("📋 Open CSV File & Map Columns", width="large")
 def render_csv_mapping_dialog(raw_df, active_scenario):
     st.write("Here is a preview of the first few rows of your CSV file. Please map the columns:")
     st.dataframe(raw_df.head(5), use_container_width=True)
@@ -28,20 +28,27 @@ def render_csv_mapping_dialog(raw_df, active_scenario):
     guessed_time, guessed_power = guess_columns(raw_cols)
     
     time_idx = raw_cols.index(guessed_time) if guessed_time in raw_cols else 0
-    power_idx = raw_cols.index(guessed_power) if guessed_power in raw_cols else (1 if len(raw_cols) > 1 else 0)
+    default_power_list = [guessed_power] if guessed_power in raw_cols else []
     
     st.divider()
     col_map1, col_map2, col_map3 = st.columns(3)
     final_time_col = col_map1.selectbox("🕒 Time/Date Column", options=raw_cols, index=time_idx, key=f"dlg_time_{active_scenario}")
-    final_power_col = col_map2.selectbox("⚡ Power Column", options=raw_cols, index=power_idx, key=f"dlg_pwr_{active_scenario}")
+    
+    # UPGRADE: Changed to multiselect to allow multiple sub-meters
+    final_power_cols = col_map2.multiselect("⚡ Power Column(s) (Select all that apply)", options=raw_cols, default=default_power_list, key=f"dlg_pwr_{active_scenario}")
+    
     unit_mode = col_map3.selectbox("📊 Data Unit in File", options=["Kilowatt (kW)", "Watt (W)"], index=0, key=f"dlg_unit_{active_scenario}")
     
     final_unit = "kW" if "Kilowatt" in unit_mode else "W"
     
     st.divider()
-    if st.button("🤝 Confirm Mapping & Load Data", type="primary", use_container_width=True, key=f"dlg_confirm_{active_scenario}"):
+    # Basic validation to ensure at least one power column is selected
+    if not final_power_cols:
+        st.warning("Please select at least one power column to proceed.")
+        
+    if st.button("🤝 Confirm Mapping & Load Data", type="primary", use_container_width=True, key=f"dlg_confirm_{active_scenario}", disabled=len(final_power_cols)==0):
         st.session_state[f"mapped_time_col_{active_scenario}"] = final_time_col
-        st.session_state[f"mapped_power_col_{active_scenario}"] = final_power_col
+        st.session_state[f"mapped_power_col_{active_scenario}"] = final_power_cols # Now stores a list
         st.session_state[f"mapped_unit_{active_scenario}"] = final_unit
         st.session_state[f"csv_mapping_ready_{active_scenario}"] = True
         st.rerun()
@@ -61,7 +68,8 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
     report_name = st.text_input("Report Title", value=default_report_name, key=f"report_title_{active_scenario}")
     
     st.subheader(t.get("header_grid", "Grid Parameters"))
-    grid_limit = st.number_input(t.get("grid_limit", "Grid Limit (kW)"), value=float(p.get('grid_limit', 50.0)), step=5.0, key=f"grid_limit_csv_{active_scenario}")
+    # UPGRADE: Allow 0.0 for Greenfield projects (No Limit)
+    grid_limit = st.number_input("Grid Limit (kW) [0 = Unlimited]", value=float(p.get('grid_limit', 50.0)), min_value=0.0, step=5.0, key=f"grid_limit_csv_{active_scenario}")
     
     res_options = [1, 5, 15, 60]
     saved_res = p.get('resolution', 15)
@@ -70,6 +78,14 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
     
     col_raw = st.color_picker("Raw Load Color", p.get('col_raw', "#A9A9A9"), key=f"col_raw_csv_{active_scenario}")
     
+    # SYSTEM MEMORY FIX: Real-time write-back so values survive tab switching
+    if 'loaded_params' not in st.session_state:
+        st.session_state['loaded_params'] = {}
+    st.session_state['loaded_params']['report_name'] = report_name
+    st.session_state['loaded_params']['grid_limit'] = grid_limit
+    st.session_state['loaded_params']['resolution'] = res
+    st.session_state['loaded_params']['col_raw'] = col_raw
+
     filtered_df = None
 
     if uploaded_file:

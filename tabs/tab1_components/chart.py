@@ -3,56 +3,67 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 
-def create_violation_chart(plot_df, x_col, y_col, grid_limit, title):
+def create_violation_chart(plot_df, x_col, y_col, grid_limit, title, sub_meters=None):
     """
-    Helper function to render a Plotly chart with a base load, 
-    a red grid limit line, and red shading for any peaks exceeding the limit.
+    Helper function to render a Plotly chart with a base load.
+    UPGRADED: Renders optional sub-meters and disables red limit logic if grid_limit is 0.0
     """
     fig = go.Figure()
     
-    # 1. Base Load Line
+    # 1. Base Load Line (The aggregated total)
     fig.add_trace(go.Scatter(
         x=plot_df[x_col],
         y=plot_df[y_col],
         mode='lines',
-        name='Load Profile',
-        line=dict(color='#1f77b4', width=2)
+        name='Total Load Profile',
+        line=dict(color='#1f77b4', width=3)
     ))
     
-    # 2. Grid Limit Horizontal Line
-    fig.add_hline(
-        y=grid_limit, 
-        line_dash="dash", 
-        line_color="red", 
-        annotation_text=f"Grid Limit: {grid_limit:,.1f} kW", 
-        annotation_position="top left",
-        annotation_font_color="red"
-    )
+    # 2. Add individual sub-meters (if multiple were selected)
+    if sub_meters:
+        for meter in sub_meters:
+            if meter in plot_df.columns:
+                fig.add_trace(go.Scatter(
+                    x=plot_df[x_col],
+                    y=plot_df[meter],
+                    mode='lines',
+                    name=f"Sub-Meter: {meter}",
+                    line=dict(width=1.5),
+                    opacity=0.6
+                ))
     
-    # 3. Violation Shading (Red Area above the limit)
-    # To fill ONLY the peaks, we create an invisible lower boundary clamped at the grid limit
-    capped_load = plot_df[y_col].clip(upper=grid_limit)
-    
-    fig.add_trace(go.Scatter(
-        x=plot_df[x_col],
-        y=capped_load,
-        mode='lines',
-        line=dict(width=0),
-        showlegend=False,
-        hoverinfo='skip'
-    ))
-    
-    # Now we draw the actual load again and tell Plotly to fill the gap down to the capped boundary
-    fig.add_trace(go.Scatter(
-        x=plot_df[x_col],
-        y=plot_df[y_col],
-        mode='lines',
-        fill='tonexty',
-        fillcolor='rgba(255, 0, 0, 0.4)', # Semi-transparent red
-        line=dict(width=0),
-        name='Grid Violation (Overload)',
-        hoverinfo='skip'
-    ))
+    # 3. Grid Limit Horizontal Line & Violation Shading (ONLY if limit > 0)
+    if grid_limit > 0.0:
+        fig.add_hline(
+            y=grid_limit, 
+            line_dash="dash", 
+            line_color="red", 
+            annotation_text=f"Grid Limit: {grid_limit:,.1f} kW", 
+            annotation_position="top left",
+            annotation_font_color="red"
+        )
+        
+        capped_load = plot_df[y_col].clip(upper=grid_limit)
+        
+        fig.add_trace(go.Scatter(
+            x=plot_df[x_col],
+            y=capped_load,
+            mode='lines',
+            line=dict(width=0),
+            showlegend=False,
+            hoverinfo='skip'
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=plot_df[x_col],
+            y=plot_df[y_col],
+            mode='lines',
+            fill='tonexty',
+            fillcolor='rgba(255, 0, 0, 0.4)',
+            line=dict(width=0),
+            name='Grid Violation (Overload)',
+            hoverinfo='skip'
+        ))
     
     fig.update_layout(
         title=title,
@@ -89,9 +100,15 @@ def render_baseline_chart():
         total_consumption_kwh = df['consumption_kw'].sum() / 4.0
         max_peak_kw = df['consumption_kw'].max()
         
-        # Violation Calculations (The math behind the red shading)
-        # Clip all values below 0, so we only sum up the excess power
-        df['violation_kw'] = (df['consumption_kw'] - grid_limit).clip(lower=0.0)
+        # UPGRADE: Safe Violation Calculation for Greenfield (No Limit) scenarios
+        if grid_limit > 0.0:
+            df['violation_kw'] = (df['consumption_kw'] - grid_limit).clip(lower=0.0)
+        else:
+            df['violation_kw'] = 0.0
+            
+        # Detect any sub-meters dynamically (ignore standard calculation columns)
+        excluded_cols = ['timestamp', 'consumption_kw', 'violation_kw']
+        sub_meters = [col for col in df.columns if col not in excluded_cols and pd.api.types.is_numeric_dtype(df[col])]
         
         max_violation_kw = df['violation_kw'].max()
         violation_volume_kwh = df['violation_kw'].sum() / 4.0

@@ -17,16 +17,21 @@ def render_tab1_baseline():
     if 'scenario_vault' not in st.session_state:
         st.session_state['scenario_vault'] = {}
 
-    st.header("🏢 Baseline Configuration")
+    st.header(" Baseline Configuration")
     st.write("Choose whether to build a fresh configuration or edit a previously stored scenario.")
 
     # --- 1. THE GATEKEEPER UI SELECTOR ---
-    mode = st.radio("Scenario Mode Selector", options=["🟢 Create a New Scenario", "✏️ Edit an Existing Scenario"], horizontal=True)
+    mode = st.radio(
+        "Scenario Mode Selector", 
+        options=[" Create a New Scenario", " Edit an Existing Scenario"], 
+        horizontal=True,
+        key="baseline_scenario_mode"
+    )
     
     active_scenario = f"New_Scenario_{len(st.session_state['scenario_vault']) + 1}"
     is_edit_mode = False
 
-    if mode == "✏️ Edit an Existing Scenario":
+    if mode == " Edit an Existing Scenario":
         if not st.session_state['scenario_vault']:
             st.warning("The vault is currently empty. Please create and save a new scenario first.")
             st.session_state['last_loaded_registry_name'] = None
@@ -64,7 +69,7 @@ def render_tab1_baseline():
     p = st.session_state.get('loaded_params', {})
 
     # --- 2. GLOBAL PROJECT PARAMETERS ---
-    st.write("### 🌍 Project Parameters")
+    st.write("### Project Parameters")
     project_metadata = render_project_params(p.get('project_metadata', {}), active_scenario)
     
     # SYSTEM-GEDÄCHTNIS (Feedback Loop): Schreibt Änderungen sofort ins globale Register
@@ -82,7 +87,7 @@ def render_tab1_baseline():
     st.divider()
 
     # --- 3. DATA SOURCE SELECTOR ---
-    st.write("### 📊 Data Source")
+    st.write("### Data Source")
     source_options = ['Manual Profiler', 'CSV Upload']
     internal_source = st.session_state.get('loaded_data_source', 'Manual')
     default_source = 'CSV Upload' if internal_source == 'CSV' else 'Manual Profiler'
@@ -104,7 +109,7 @@ def render_tab1_baseline():
         if is_edit_mode and internal_source == 'CSV':
             st.divider()
             st.write("### 🔍 Saved CSV Profile Inspector")
-            if st.button("📊 CSV-Diagramme & Analysen einblenden", type="primary", use_container_width=True):
+            if st.button(" CSV-Diagramme & Analysen einblenden", type="primary", use_container_width=True):
                 st.session_state['show_loaded_dashboard'] = True
             if st.session_state.get('show_loaded_dashboard', False):
                 vault_item = st.session_state['scenario_vault'].get(active_scenario)
