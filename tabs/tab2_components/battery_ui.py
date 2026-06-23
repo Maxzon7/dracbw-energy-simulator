@@ -1,12 +1,15 @@
 # tabs/tab2_components/battery_ui.py
 import streamlit as st
 
-def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> dict:
+def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0, existing_params: dict = None) -> dict:
     """
     Layer 1: Renders advanced UI inputs for the BESS (Battery Energy Storage System).
-    Includes targeted shaving thresholds (dynamically linked to grid limits), 
-    recharge boundary windows, and financial parameters.
+    Uses 'existing_params' to persist user inputs across tab switches (Two-Way Sync).
     """
+    # Fallback to an empty dictionary if nothing is passed
+    if existing_params is None:
+        existing_params = {}
+
     st.write("### BESS Storage Dimensioning")
     st.info("Configure the storage hardware limits, target operational thresholds, and battery recharging strategy.")
     
@@ -16,25 +19,29 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
         st.write("**Hardware Capacity & Power**")
         b_cap = st.number_input(
             "Storage Capacity (kWh)", 
-            min_value=10.0, max_value=5000.0, value=200.0, step=50.0,
+            min_value=10.0, max_value=5000.0, 
+            value=float(existing_params.get("b_cap", 200.0)), # Reads from memory
+            step=50.0,
             key=f"bat_cap_{scenario_id}"
         )
         b_pwr = st.number_input(
             "Max Inverter Power (kW)", 
-            min_value=5.0, max_value=2000.0, value=100.0, step=25.0,
+            min_value=5.0, max_value=2000.0, 
+            value=float(existing_params.get("b_pwr", 100.0)), # Reads from memory
+            step=25.0,
             key=f"bat_pwr_{scenario_id}"
         )
         
         st.divider()
         st.write("**Peak Shaving Target**")
         
-        # Ensure the default grid limit doesn't violate Streamlit's min/max bounds
         safe_grid_limit = max(10.0, min(5000.0, float(default_grid_limit)))
-        
         shaving_threshold = st.number_input(
             "Target Shaving Threshold (kW)",
-            min_value=10.0, max_value=5000.0, value=safe_grid_limit, step=10.0,
-            help="The battery will discharge to keep the grid demand strictly at or below this value. Defaults to the Baseline Grid Limit.",
+            min_value=10.0, max_value=5000.0, 
+            value=float(existing_params.get("shaving_threshold", safe_grid_limit)),
+            step=10.0,
+            help="The battery will discharge to keep the grid demand strictly at or below this value.",
             key=f"bat_thresh_{scenario_id}"
         )
 
@@ -42,25 +49,27 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
         st.write("**Intelligent Recharge Control**")
         charge_pwr_limit = st.slider(
             "Max Recharge Power Limit (kW)",
-            min_value=5, max_value=500, value=30, step=5,
-            help="Limits how fast the battery pulls power to recharge, preventing secondary grid peaks.",
+            min_value=5, max_value=500, 
+            value=int(existing_params.get("charge_pwr_limit", 30)),
+            step=5,
             key=f"bat_chg_lim_{scenario_id}"
         )
         
         st.write("#### Allowed Charging Window")
         charge_start_hour = st.slider(
-            "Window Start Time (Hour)", min_value=0, max_value=23, value=22,
+            "Window Start Time (Hour)", min_value=0, max_value=23, 
+            value=int(existing_params.get("charge_start_hour", 22)),
             key=f"bat_chg_start_{scenario_id}"
         )
         charge_end_hour = st.slider(
-            "Window End Time (Hour)", min_value=0, max_value=23, value=6,
+            "Window End Time (Hour)", min_value=0, max_value=23, 
+            value=int(existing_params.get("charge_end_hour", 6)),
             key=f"bat_chg_end_{scenario_id}"
         )
         
         green_charging = st.toggle(
             "Green Charging Only (Solar Surplus)", 
-            value=False,
-            help="If enabled, the battery will refuse grid electricity and only recharge via free local solar excess.",
+            value=bool(existing_params.get("green_charging", False)),
             key=f"bat_green_{scenario_id}"
         )
 
@@ -71,68 +80,75 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
     with col_eff1:
         efficiency = st.slider(
             "Round-Trip Efficiency (%)", 
-            min_value=75, max_value=98, value=92,
-            help="Total AC-to-AC conversion efficiency. Splitted equally via square root on charge/discharge cycles.",
+            min_value=75, max_value=98, 
+            value=int(existing_params.get("efficiency", 92)),
             key=f"bat_eff_{scenario_id}"
         )
     with col_eff2:
         initial_soc_pct = st.slider(
-            "Initial State of Charge (%)", min_value=0, max_value=100, value=50,
+            "Initial State of Charge (%)", min_value=0, max_value=100, 
+            value=int(existing_params.get("initial_soc_pct", 50)),
             key=f"bat_soc_init_{scenario_id}"
         )
 
-   # --- Financial Estimates (CAPEX/OPEX & Lifecycle) ---
+   # --- Financial Estimates ---
     st.divider()
     with st.expander("$$ Financial Estimates (CAPEX, OPEX & Lifecycle)", expanded=False):
-        st.write("Configure the estimated capital expenditure, maintenance costs, and physical wear for the ROI analysis.")
+        st.write("Configure the estimated capital expenditure, maintenance costs, and physical wear.")
         c_fin1, c_fin2, c_fin3, c_fin4 = st.columns(4)
         
         capex_per_kwh = c_fin1.number_input(
             "Storage Cells CAPEX (€/kWh)", 
-            min_value=50.0, max_value=1500.0, value=400.0, step=10.0,
+            min_value=50.0, max_value=1500.0, 
+            value=float(existing_params.get("capex_per_kwh", 400.0)), 
+            step=10.0,
             key=f"bat_capex_kwh_{scenario_id}"
         )
         capex_per_kw = c_fin2.number_input(
             "Inverter CAPEX (€/kW)", 
-            min_value=50.0, max_value=1000.0, value=150.0, step=10.0,
+            min_value=50.0, max_value=1000.0, 
+            value=float(existing_params.get("capex_per_kw", 150.0)), 
+            step=10.0,
             key=f"bat_capex_kw_{scenario_id}"
         )
         opex_pct = c_fin3.number_input(
             "Annual OPEX (%)", 
-            min_value=0.0, max_value=10.0, value=1.5, step=0.1,
-            help="Estimated yearly maintenance, insurance, and cooling costs.",
+            min_value=0.0, max_value=10.0, 
+            value=float(existing_params.get("opex_pct", 1.5)), 
+            step=0.1,
             key=f"bat_opex_{scenario_id}"
         )
         degradation_pct = c_fin4.number_input(
             "Annual Degradation (%)", 
-            min_value=0.0, max_value=10.0, value=1.5, step=0.1,
-            help="Annual capacity loss of the battery cells (typically 1.5% to 2.5%).",
+            min_value=0.0, max_value=10.0, 
+            value=float(existing_params.get("degradation_pct", 1.5)), 
+            step=0.1,
             key=f"bat_deg_{scenario_id}"
         )
         
-        # NEU: Der Hardware Austausch (Replacement)
         st.write("**Hardware Replacement (End of Life)**")
         c_rep1, c_rep2 = st.columns(2)
         replacement_year = c_rep1.slider(
             "Cell Replacement Year", 
-            min_value=5, max_value=15, value=10,
-            help="Year in which the battery cells need to be replaced.",
+            min_value=5, max_value=15, 
+            value=int(existing_params.get("replacement_year", 10)),
             key=f"bat_rep_yr_{scenario_id}"
         )
         replacement_pct = c_rep2.number_input(
             "Replacement Cost (% of Storage Cells)", 
-            min_value=10.0, max_value=150.0, value=100.0, step=5.0,
-            help="Cost to replace the cells as a percentage of the original Storage Cells CAPEX.",
+            min_value=10.0, max_value=150.0, 
+            value=float(existing_params.get("replacement_pct", 100.0)), 
+            step=5.0,
             key=f"bat_rep_pct_{scenario_id}"
         )
         
-        # Genaue Kostentrennung für die BWL-Logik
         total_storage_capex = b_cap * capex_per_kwh
         total_inverter_capex = b_pwr * capex_per_kw
         total_bat_capex = total_storage_capex + total_inverter_capex
         
         st.info(f"**Estimated Initial Battery Investment (CAPEX): {total_bat_capex:,.0f} €**")
 
+    # The returned dict is used to update the "Schmierblatt" in Tab 2
     return {
         "b_cap": b_cap,
         "b_pwr": b_pwr,
@@ -147,8 +163,8 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0) -> di
         "capex_per_kw": capex_per_kw,
         "opex_pct": opex_pct,
         "degradation_pct": degradation_pct,
-        "replacement_year": replacement_year,    # NEU
-        "replacement_pct": replacement_pct,      # NEU
-        "total_storage_capex": total_storage_capex, # NEU (Wichtig für die spätere Rechnung)
+        "replacement_year": replacement_year,    
+        "replacement_pct": replacement_pct,      
+        "total_storage_capex": total_storage_capex, 
         "total_capex": total_bat_capex
     }

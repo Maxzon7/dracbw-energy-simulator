@@ -66,10 +66,18 @@ def render_tab1_baseline():
     # --- 2. GLOBAL PROJECT PARAMETERS ---
     st.write("### 🌍 Project Parameters")
     project_metadata = render_project_params(p.get('project_metadata', {}), active_scenario)
+    
+    # SYSTEM-GEDÄCHTNIS (Feedback Loop): Schreibt Änderungen sofort ins globale Register
+    if 'loaded_params' not in st.session_state:
+        st.session_state['loaded_params'] = {}
+    st.session_state['loaded_params']['project_metadata'] = project_metadata
     st.session_state['current_project_metadata'] = project_metadata
 
     # --- 2.5 ECONOMIC BASELINE (NEU) ---
     financial_metadata = render_financial_inputs(p.get('financial_metadata', {}), active_scenario)
+    
+    # SYSTEM-GEDÄCHTNIS (Feedback Loop)
+    st.session_state['loaded_params']['financial_metadata'] = financial_metadata
     st.session_state['current_financial_metadata'] = financial_metadata
     st.divider()
 
