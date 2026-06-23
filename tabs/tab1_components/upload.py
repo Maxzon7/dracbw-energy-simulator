@@ -78,6 +78,27 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
     
     col_raw = st.color_picker("Raw Load Color", p.get('col_raw', "#A9A9A9"), key=f"col_raw_csv_{active_scenario}")
     
+    # --- NEW: SUB-METER CUSTOMIZATION (NAMES & COLORS) ---
+    sub_meter_configs = {}
+    mapped_power_cols = st.session_state.get(f"mapped_power_col_{active_scenario}", [])
+    
+    if isinstance(mapped_power_cols, list) and len(mapped_power_cols) > 0:
+        with st.expander("🎨 Customize Sub-Meters (Names & Colors)", expanded=False):
+            # A standard Plotly color palette so they look good by default
+            default_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+            saved_configs = p.get('sub_meter_configs', {})
+            
+            for idx, meter in enumerate(mapped_power_cols):
+                c1, c2 = st.columns([3, 1])
+                saved_meter_conf = saved_configs.get(meter, {})
+                def_name = saved_meter_conf.get('name', meter)
+                def_color = saved_meter_conf.get('color', default_colors[idx % len(default_colors)])
+                
+                custom_name = c1.text_input(f"Name: {meter}", value=def_name, key=f"name_{meter}_{active_scenario}")
+                custom_color = c2.color_picker(f"Color: {meter}", value=def_color, key=f"color_{meter}_{active_scenario}")
+                
+                sub_meter_configs[meter] = {'name': custom_name, 'color': custom_color}
+    
     # SYSTEM MEMORY FIX: Real-time write-back so values survive tab switching
     if 'loaded_params' not in st.session_state:
         st.session_state['loaded_params'] = {}
@@ -85,6 +106,7 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
     st.session_state['loaded_params']['grid_limit'] = grid_limit
     st.session_state['loaded_params']['resolution'] = res
     st.session_state['loaded_params']['col_raw'] = col_raw
+    st.session_state['loaded_params']['sub_meter_configs'] = sub_meter_configs
 
     filtered_df = None
 
@@ -125,13 +147,15 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
     # ==========================================
     if filtered_df is not None and not filtered_df.empty:
         # Wir schnüren ein Paket mit allen Parametern
+        # Wir schnüren ein Paket mit allen Parametern
         params_to_pass = {
             "project_metadata": st.session_state.get('current_project_metadata', {}),
             "data_source": "CSV",
             "report_name": report_name,
             "grid_limit": grid_limit,
             "resolution": res,
-            "col_raw": col_raw
+            "col_raw": col_raw,
+            "sub_meter_configs": sub_meter_configs  # <-- DIESE ZEILE HINZUFÜGEN
         }
         # Wir rufen die externe Station auf. Der Upload-Code bleibt extrem kurz!
         render_validation_dashboard(filtered_df, params_to_pass, active_scenario, is_edit_mode)

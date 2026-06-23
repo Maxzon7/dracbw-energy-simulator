@@ -23,13 +23,22 @@ def render_multi_resolution_charts(df: pd.DataFrame, params: dict, statistical_a
     st.write("#### 📊 Multi-Resolution Profile Analytics")
     tab_full, tab_month, tab_week = st.tabs(["🔭 Full Horizon Timeline", "📅 Monthly Segment Deep-Dive", "🗓️ Typical Weekly Heartbeat"])
     
-    # --- TAB 1: FULL HORIZON ---
+   # --- TAB 1: FULL HORIZON ---
     with tab_full:
         fig_full = go.Figure()
+        sub_configs = params.get('sub_meter_configs', {})
         
         # Add sub-meters as background lines first (if any exist)
         for meter in sub_meters:
-            fig_full.add_trace(go.Scatter(x=df['timestamp'], y=df[meter], mode='lines', line=dict(width=1), opacity=0.5, name=f'Sub-Meter: {meter}'))
+            conf = sub_configs.get(meter, {})
+            m_name = conf.get('name', f'Sub-Meter: {meter}')
+            m_color = conf.get('color', None)
+            
+            line_dict = dict(width=1)
+            if m_color:
+                line_dict['color'] = m_color
+                
+            fig_full.add_trace(go.Scatter(x=df['timestamp'], y=df[meter], mode='lines', line=line_dict, opacity=0.5, name=m_name))
             
         # Add the main aggregated load profile
         fig_full.add_trace(go.Scatter(x=df['timestamp'], y=df['consumption_kw'], mode='lines', line=dict(color=col_raw, width=1.5), name='Total Client Load'))
@@ -54,6 +63,7 @@ def render_multi_resolution_charts(df: pd.DataFrame, params: dict, statistical_a
         sub_df = df[df['month_idx'] == sel_month_idx].copy()
         
         fig_month = go.Figure()
+        sub_configs = params.get('sub_meter_configs', {})
         
         # Optional Greenfield limit shading (Only draw if > 0)
         if grid_limit > 0.0:
@@ -62,7 +72,15 @@ def render_multi_resolution_charts(df: pd.DataFrame, params: dict, statistical_a
         
         # Add sub-meters as background lines
         for meter in sub_meters:
-            fig_month.add_trace(go.Scatter(x=sub_df['timestamp'], y=sub_df[meter], mode='lines', line=dict(width=1), opacity=0.5, name=f'Sub-Meter: {meter}'))
+            conf = sub_configs.get(meter, {})
+            m_name = conf.get('name', f'Sub-Meter: {meter}')
+            m_color = conf.get('color', None)
+            
+            line_dict = dict(width=1)
+            if m_color:
+                line_dict['color'] = m_color
+                
+            fig_month.add_trace(go.Scatter(x=sub_df['timestamp'], y=sub_df[meter], mode='lines', line=line_dict, opacity=0.5, name=m_name))
             
         # Add the main aggregated load profile
         fig_month.add_trace(go.Scatter(x=sub_df['timestamp'], y=sub_df['consumption_kw'], mode='lines', line=dict(color=col_raw, width=2), name='Total Client Load'))
@@ -73,7 +91,6 @@ def render_multi_resolution_charts(df: pd.DataFrame, params: dict, statistical_a
             
         fig_month.update_layout(height=400, margin=dict(l=0, r=0, t=20, b=0), yaxis_title="Power (kW)", hovermode="x unified")
         st.plotly_chart(fig_month, use_container_width=True)
-        
     # --- TAB 3: TYPICAL WEEKLY HEARTBEAT (SAFE MODE) ---
     with tab_week:
         df_week = df.copy()
