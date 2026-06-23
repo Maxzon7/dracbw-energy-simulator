@@ -90,7 +90,7 @@ def render_baseline_chart():
             df['timestamp'] = pd.to_datetime(df['timestamp'])
 
         # ==========================================
-        # 0. BASELINE TECHNICAL METRICS (UPGRADED)
+        # 0. BASELINE TECHNICAL METRICS
         # ==========================================
         st.write("### 📊 Baseline Technical Summary")
         
@@ -106,8 +106,8 @@ def render_baseline_chart():
         else:
             df['violation_kw'] = 0.0
             
-        # Detect any sub-meters dynamically (ignore standard calculation columns)
-        excluded_cols = ['timestamp', 'consumption_kw', 'violation_kw']
+        # FIXED: Dynamically capture all chosen sub-meters while ignoring core math columns
+        excluded_cols = ['timestamp', 'violation_kw', 'consumption_kw']
         sub_meters = [col for col in df.columns if col not in excluded_cols and pd.api.types.is_numeric_dtype(df[col])]
         
         max_violation_kw = df['violation_kw'].max()
@@ -136,9 +136,9 @@ def render_baseline_chart():
         st.divider()
 
         # ==========================================
-        # 1. DETAILED MONTHLY VIEW (DEFAULT)
+        # 1. DETAILED MONTHLY VIEW
         # ==========================================
-        st.write("### 🔍 Detailed Monthly View")
+        st.write("### 📅 Detailed Monthly View")
         
         month_names = ["January", "February", "March", "April", "May", "June", 
                        "July", "August", "September", "October", "November", "December"]
@@ -148,20 +148,21 @@ def render_baseline_chart():
         
         monthly_df = df[df['timestamp'].dt.month == selected_month_idx]
         
-        # Render the new Plotly Chart
-        fig_monthly = create_violation_chart(monthly_df, "timestamp", "consumption_kw", grid_limit, f"Load Profile - {selected_month_name}")
+        # FIXED: Added sub_meters argument to display individual lines
+        fig_monthly = create_violation_chart(monthly_df, "timestamp", "consumption_kw", grid_limit, f"Load Profile - {selected_month_name}", sub_meters=sub_meters)
         st.plotly_chart(fig_monthly, use_container_width=True)
         
         st.divider()
 
         # ==========================================
-        # 2. SIMPLIFIED YEARLY OVERVIEW (DEFAULT)
+        # 2. SIMPLIFIED YEARLY OVERVIEW
         # ==========================================
-        st.write("### 📅 Simplified Yearly Overview (Weekly Average)")
+        st.write("### 📈 Simplified Yearly Overview (Weekly Average)")
         st.info("Displays the year-long trend aggregated into 1-week intervals. Note: Averaging smooths out brief extreme peaks.")
         
-        weekly_df = df.resample('W', on='timestamp')['consumption_kw'].mean().reset_index()
-        fig_weekly = create_violation_chart(weekly_df, "timestamp", "consumption_kw", grid_limit, "Weekly Average Profile")
+        # FIXED: Use mean(numeric_only=True) to retain the sub-meter columns during resampling
+        weekly_df = df.resample('W', on='timestamp').mean(numeric_only=True).reset_index()
+        fig_weekly = create_violation_chart(weekly_df, "timestamp", "consumption_kw", grid_limit, "Weekly Average Profile", sub_meters=sub_meters)
         st.plotly_chart(fig_weekly, use_container_width=True)
         
         st.divider()
@@ -169,14 +170,15 @@ def render_baseline_chart():
         # ==========================================
         # 3. ON-DEMAND ANALYSIS PROFILES
         # ==========================================
-        st.write("### 🔬 Advanced Analysis Options")
+        st.write("### 📊 Advanced Analysis Options")
         
         if st.checkbox("Show Average Work-Week Profile (Monday - Sunday Aggregation)"):
             df_temp = df.copy()
             df_temp['weekday'] = df_temp['timestamp'].dt.dayofweek
             df_temp['time'] = df_temp['timestamp'].dt.time
             
-            avg_week = df_temp.groupby(['weekday', 'time'])['consumption_kw'].mean().reset_index()
+            # FIXED: Keep all sub-meters intact during the multi-index groupby operations
+            avg_week = df_temp.groupby(['weekday', 'time']).mean(numeric_only=True).reset_index()
             
             base_date = pd.to_datetime("2024-01-01") # Dummy Monday
             avg_week['plot_time'] = avg_week.apply(
@@ -184,12 +186,12 @@ def render_baseline_chart():
                 axis=1
             )
             
-            fig_avg_week = create_violation_chart(avg_week, "plot_time", "consumption_kw", grid_limit, "Average Simulated Work-Week")
+            fig_avg_week = create_violation_chart(avg_week, "plot_time", "consumption_kw", grid_limit, "Average Simulated Work-Week", sub_meters=sub_meters)
             st.plotly_chart(fig_avg_week, use_container_width=True)
             st.write("") 
 
         if st.checkbox("Show Full 365-Day Raw Data (Warning: High 15-Min Granularity)"):
-            fig_raw = create_violation_chart(df, "timestamp", "consumption_kw", grid_limit, "365-Day Raw Data (34,560 intervals)")
+            fig_raw = create_violation_chart(df, "timestamp", "consumption_kw", grid_limit, "365-Day Raw Data (34,560 intervals)", sub_meters=sub_meters)
             st.plotly_chart(fig_raw, use_container_width=True)
             
     else:

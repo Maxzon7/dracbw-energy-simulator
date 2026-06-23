@@ -19,7 +19,7 @@ def guess_columns(raw_cols):
             power_col = col
     return time_col, power_col
 
-@@st.dialog("📋 Open CSV File & Map Columns", width="large")
+@st.dialog("📋 Open CSV File & Map Columns", width="large")
 def render_csv_mapping_dialog(raw_df, active_scenario):
     st.write("Here is a preview of the first few rows of your CSV file. Please map the columns:")
     st.dataframe(raw_df.head(5), use_container_width=True)
