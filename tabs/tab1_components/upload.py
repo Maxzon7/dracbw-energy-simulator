@@ -3,9 +3,6 @@ import streamlit as st
 import pandas as pd
 from logic.energy_logic import load_and_clean_csv, process_consumption_data
 
-# ---> HIER IST DER NEUE IMPORT <---
-from tabs.tab1_components.validation_ui import render_validation_dashboard
-
 TIME_SYNONYMS = ['timestamp', 'zeit', 'datum', 'date', 'time', 'uhrzeit', 'datetime']
 POWER_SYNONYMS = ['kw', 'consumption', 'leistung', 'wirkleistung', 'power', 'load', 'verbrauch', 'watt', 'p_tot']
 
@@ -34,7 +31,6 @@ def render_csv_mapping_dialog(raw_df, active_scenario):
     col_map1, col_map2, col_map3 = st.columns(3)
     final_time_col = col_map1.selectbox("🕒 Time/Date Column", options=raw_cols, index=time_idx, key=f"dlg_time_{active_scenario}")
     
-    # UPGRADE: Changed to multiselect to allow multiple sub-meters
     final_power_cols = col_map2.multiselect("⚡ Power Column(s) (Select all that apply)", options=raw_cols, default=default_power_list, key=f"dlg_pwr_{active_scenario}")
     
     unit_mode = col_map3.selectbox("📊 Data Unit in File", options=["Kilowatt (kW)", "Watt (W)"], index=0, key=f"dlg_unit_{active_scenario}")
@@ -42,18 +38,21 @@ def render_csv_mapping_dialog(raw_df, active_scenario):
     final_unit = "kW" if "Kilowatt" in unit_mode else "W"
     
     st.divider()
-    # Basic validation to ensure at least one power column is selected
     if not final_power_cols:
         st.warning("Please select at least one power column to proceed.")
         
     if st.button("🤝 Confirm Mapping & Load Data", type="primary", use_container_width=True, key=f"dlg_confirm_{active_scenario}", disabled=len(final_power_cols)==0):
         st.session_state[f"mapped_time_col_{active_scenario}"] = final_time_col
-        st.session_state[f"mapped_power_col_{active_scenario}"] = final_power_cols # Now stores a list
+        st.session_state[f"mapped_power_col_{active_scenario}"] = final_power_cols 
         st.session_state[f"mapped_unit_{active_scenario}"] = final_unit
         st.session_state[f"csv_mapping_ready_{active_scenario}"] = True
         st.rerun()
 
-def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
+def render_upload_ui(active_scenario: str, p: dict):
+    """
+    Renders the UI for uploading and mapping CSVs.
+    Returns: uploaded_file, filtered_df, params_to_pass
+    """
     t = st.session_state.get('t', {}) 
     
     st.write("### 📁 CSV Upload Module")
@@ -68,7 +67,6 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
     report_name = st.text_input("Report Title", value=default_report_name, key=f"report_title_{active_scenario}")
     
     st.subheader(t.get("header_grid", "Grid Parameters"))
-    # UPGRADE: Allow 0.0 for Greenfield projects (No Limit)
     grid_limit = st.number_input("Grid Limit (kW) [0 = Unlimited]", value=float(p.get('grid_limit', 50.0)), min_value=0.0, step=5.0, key=f"grid_limit_csv_{active_scenario}")
     
     res_options = [1, 5, 15, 60]
@@ -78,13 +76,11 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
     
     col_raw = st.color_picker("Raw Load Color", p.get('col_raw', "#A9A9A9"), key=f"col_raw_csv_{active_scenario}")
     
-    # --- NEW: SUB-METER CUSTOMIZATION (NAMES & COLORS) ---
     sub_meter_configs = {}
     mapped_power_cols = st.session_state.get(f"mapped_power_col_{active_scenario}", [])
     
     if isinstance(mapped_power_cols, list) and len(mapped_power_cols) > 0:
         with st.expander("🎨 Customize Sub-Meters (Names & Colors)", expanded=False):
-            # A standard Plotly color palette so they look good by default
             default_colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
             saved_configs = p.get('sub_meter_configs', {})
             
@@ -96,26 +92,16 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
                 
                 custom_name = c1.text_input(f"Name: {meter}", value=def_name, key=f"name_{meter}_{active_scenario}")
                 custom_color = c2.color_picker(f"Color: {meter}", value=def_color, key=f"color_{meter}_{active_scenario}")
-                
                 sub_meter_configs[meter] = {'name': custom_name, 'color': custom_color}
     
-    # SYSTEM MEMORY FIX: Real-time write-back so values survive tab switching
-    if 'loaded_params' not in st.session_state:
-        st.session_state['loaded_params'] = {}
-    st.session_state['loaded_params']['report_name'] = report_name
-    st.session_state['loaded_params']['grid_limit'] = grid_limit
-    st.session_state['loaded_params']['resolution'] = res
-    st.session_state['loaded_params']['col_raw'] = col_raw
-    st.session_state['loaded_params']['sub_meter_configs'] = sub_meter_configs
-
     filtered_df = None
+    params_to_pass = {}
 
     if uploaded_file:
         try:
             uploaded_file.seek(0)
             raw_df = load_and_clean_csv(uploaded_file)
             
-            # --- NEU: DIREKTE DATEN-VORSCHAU ---
             st.write("##### 🔍 Data Preview (First 5 Rows)")
             st.dataframe(raw_df.head(5), use_container_width=True)
             
@@ -135,6 +121,7 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
                 
                 if len(selected_dates) == 2:
                     filtered_df = data[(data['timestamp'].dt.date >= selected_dates[0]) & (data['timestamp'].dt.date <= selected_dates[1])]
+                    
         except Exception as e:
             st.error(f"CSV Reading Error: {e}")
             
@@ -142,20 +129,13 @@ def render_csv_upload(active_scenario: str, is_edit_mode: bool, p: dict):
         filtered_df = st.session_state['filtered_data']
         st.success(f"📦 Currently using active data from loaded scenario: '{st.session_state.get('active_scenario_name')}'")
         
-    # ==========================================
-    # DIE MAGIE: ÜBERGABE AN DEN TRICHTER
-    # ==========================================
-    if filtered_df is not None and not filtered_df.empty:
-        # Wir schnüren ein Paket mit allen Parametern
-        # Wir schnüren ein Paket mit allen Parametern
-        params_to_pass = {
-            "project_metadata": st.session_state.get('current_project_metadata', {}),
-            "data_source": "CSV",
-            "report_name": report_name,
-            "grid_limit": grid_limit,
-            "resolution": res,
-            "col_raw": col_raw,
-            "sub_meter_configs": sub_meter_configs  # <-- DIESE ZEILE HINZUFÜGEN
-        }
-        # Wir rufen die externe Station auf. Der Upload-Code bleibt extrem kurz!
-        render_validation_dashboard(filtered_df, params_to_pass, active_scenario, is_edit_mode)
+    params_to_pass = {
+        "data_source": "CSV",
+        "report_name": report_name,
+        "grid_limit": grid_limit,
+        "resolution": res,
+        "col_raw": col_raw,
+        "sub_meter_configs": sub_meter_configs
+    }
+        
+    return uploaded_file, filtered_df, params_to_pass
