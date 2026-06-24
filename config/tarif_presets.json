@@ -1,0 +1,53 @@
+{
+    "Netherlands": {
+      "Enexis_2026_GTO": {
+        "MS-D (Medium Voltage Distribution)": {
+          "fixed_annual_connection_fee": 1742.00,
+          "fixed_annual_transport_fee": 441.00,
+          "contracted_capacity_fee_per_kw_year": 28.91,
+          "peak_capacity_fee_per_kw_month": 3.66,
+          "energy_price_normal_per_kwh": 0.0247,
+          "energy_price_laag_per_kwh": 0.0247,
+          "max_connection_capacity_kw": 1750
+        },
+        "MS/LS (MV/LV Transformer Station)": {
+          "fixed_annual_connection_fee": 401.00,
+          "fixed_annual_transport_fee": 441.00,
+          "contracted_capacity_fee_per_kw_year": 49.26,
+          "peak_capacity_fee_per_kw_month": 3.66,
+          "energy_price_normal_per_kwh": 0.0247,
+          "energy_price_laag_per_kwh": 0.0247,
+          "max_connection_capacity_kw": 173
+        },
+        "MS-T (Medium Voltage Transport Network)": {
+          "fixed_annual_connection_fee": 4804.00,
+          "fixed_annual_transport_fee": 441.00,
+          "contracted_capacity_fee_per_kw_year": 27.37,
+          "peak_capacity_fee_per_kw_month": 3.06,
+          "energy_price_normal_per_kwh": 0.0150,
+          "energy_price_laag_per_kwh": 0.0150,
+          "max_connection_capacity_kw": 6000
+        }
+      },
+      "Stedin_2026_Grootverbruik": {
+        "MS (Medium Voltage Grid 151-1500 kW)": {
+          "fixed_annual_connection_fee": 1505.00,
+          "fixed_annual_transport_fee": 441.00,
+          "contracted_capacity_fee_per_kw_year": 24.2736,
+          "peak_capacity_fee_per_kw_month": 3.0966,
+          "energy_price_normal_per_kwh": 0.0198,
+          "energy_price_laag_per_kwh": 0.0198,
+          "max_connection_capacity_kw": 1500
+        },
+        "Trafo_MS/LS (MV/LV Transformer 51-150 kW)": {
+          "fixed_annual_connection_fee": 171.84,
+          "fixed_annual_transport_fee": 441.00,
+          "contracted_capacity_fee_per_kw_year": 47.1696,
+          "peak_capacity_fee_per_kw_month": 3.0966,
+          "energy_price_normal_per_kwh": 0.0198,
+          "energy_price_laag_per_kwh": 0.0198,
+          "max_connection_capacity_kw": 150
+        }
+      }
+    }
+  }
