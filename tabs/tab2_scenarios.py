@@ -18,13 +18,13 @@ from tabs.tab2_components.pdf_export import generate_tech_pdf
 from tabs.tab2_components.feasibility_check import render_feasibility_check
 from tabs.tab2_components.performance_matrix import render_performance_matrix
 
-# NEU: Wir importieren jetzt auch unsere Generator-Logik
+# Logik
 from logic.energy_logic import simulate_battery_logic, simulate_generator_logic 
 
 def render_tab2_scenarios():
     """
-    Master Tab 2: Scenario Engine. Manages isolated and combined simulation pipelines (Solar + BESS cascade),
-    synchronizes interface widgets, and provides advanced DRACBV technical metrics with dynamic UX controls.
+    Master Tab 2: Scenario Engine. Manages isolated and combined simulation pipelines.
+    Now uses a strict "Compute & Commit" architecture to protect vault data while ensuring high UI performance.
     """
     t = st.session_state.get('t', {})
     st.header("Scenario Simulation (Hardware Integration)")
@@ -41,18 +41,25 @@ def render_tab2_scenarios():
     selected_name = st.selectbox("Choose a Base Profile or an existing Sub-Scenario Variant:", saved_scenarios)
     
     current_item = vault[selected_name]
+
+    # --- TÜRSTEHER (Sicherheits-Check) ---
+    if 'df' not in current_item:
+        st.info("⚠️ This project is still empty. Please go to '1️⃣ Baseline', load or generate a profile, and click 'Save Profile' first.")
+        return
+    # -------------------------------------------
+    
     parent_name = current_item.get('parent')
     
-    # DETERMINATION LOGIC: Find the true untouched raw consumption data
+    # DETERMINATION LOGIC: Base vs. Variant
     if parent_name and parent_name in vault:
-        # We are editing an existing Sub-Scenario Variant!
+        # Editing an existing Sub-Scenario Variant
         baseline_df = vault[parent_name]['df'].copy()
         grid_limit = vault[parent_name].get('grid_limit', 120.0)
         project_metadata = vault[parent_name].get('params', {}).get('project_metadata', {})
         res = vault[parent_name].get('params', {}).get('resolution', 15)
         is_variant_mode = True
     else:
-        # We are working on a fresh, clean Base Scenario!
+        # Working on a pristine Base Scenario
         baseline_df = current_item['df'].copy()
         grid_limit = current_item.get('grid_limit', 120.0)
         project_metadata = current_item.get('params', {}).get('project_metadata', {})
@@ -61,11 +68,10 @@ def render_tab2_scenarios():
 
     report_name = st.session_state.get('report_name', f"Report_{selected_name}")
 
-    # --- ROUTINE: AUTO-LOAD PREVIOUSLY SAVED STATE ON SELECTION CHANGE ---
+    # --- STATE SYNCHRONIZATION (Load Vault -> Memory) ---
     if st.session_state.get('last_selected_scen_tab2') != selected_name:
         st.session_state['last_selected_scen_tab2'] = selected_name
         
-        # Load the corresponding widget hardware values into active working memory
         if 'loaded_params' not in st.session_state:
             st.session_state['loaded_params'] = {}
             
@@ -105,6 +111,10 @@ def render_tab2_scenarios():
         if hw_draft is None:
             hw_draft = {}
         
+        # =========================================================
+        # THE PERFORMANCE FORTRESS (st.form)
+        # Prevents constant reruns while dragging sliders.
+        # =========================================================
         with st.form(key=f"sim_form_{scenario_mode}"):
             params = {}
             if scenario_mode == "Solar PV Only":
@@ -147,61 +157,88 @@ def render_tab2_scenarios():
             
             st.divider()
             
-            button_label = "🔄 Update Variant Data" if is_variant_mode else "🚀 Run Simulation Pipeline"
-            run_sim = st.form_submit_button(button_label, type="primary", use_container_width=True)
+            # Button just triggers calculation, NOT saving!
+            run_sim = st.form_submit_button("🔄 Calculate Preview", type="secondary", use_container_width=True)
 
-    # --- 2. PIPELINE EXECUTION ENGINE ---
-    if run_sim:
-        with st.spinner("Processing physical interval math cascade..."):
-            # We strip any historical calculation columns from baseline to avoid pollution loops
-            clean_base_df = baseline_df[['timestamp', 'consumption_kw']].copy()
-            
-            if scenario_mode == "Solar PV Only":
-                calculated_df = generate_solar_profile(clean_base_df, project_metadata, params)
-                calculated_df['final_grid_load_kw'] = calculated_df['net_load_kw']
-            elif scenario_mode == "Battery (BESS) Only":
-                calculated_df = run_isolated_scenario(clean_base_df, "Battery (Peak Shaving)", params, grid_limit, res)
-            elif scenario_mode == "Generator Only":
-                calculated_df = simulate_generator_logic(clean_base_df, grid_limit, params, res)
-            elif scenario_mode == "Grid Upgrade Only":
-                calculated_df = clean_base_df.copy()
-                calculated_df['final_grid_load_kw'] = calculated_df['consumption_kw']
-                calculated_df['battery_action_kw'] = 0.0
-                calculated_df['solar_gen_kw'] = 0.0
-                calculated_df['generator_action_kw'] = 0.0
-            else:
-                df_1 = generate_solar_profile(clean_base_df, project_metadata, params['solar'])
-                df_2 = simulate_battery_logic(df_1, grid_limit, params['battery'], res)
-                calculated_df = simulate_generator_logic(df_2, grid_limit, params['generator'], res)
-            
-            # PIPELINE ROUTING: Determine target destination for saving
-            if is_variant_mode:
-                # Direct overwrite of the selected variant item
-                vault[selected_name]['df'] = calculated_df
-                vault[selected_name]['data_source'] = scenario_mode
-                vault[selected_name]['params']['hardware_params'] = params
-                if scenario_mode == "Grid Upgrade Only":
-                    vault[selected_name]['grid_limit'] = params.get("new_grid_limit_kw", grid_limit)
-                st.success(f"✅ Sub-Scenario '{selected_name}' successfully updated!")
-                save_target_name = selected_name
-            else:
-                # Creating a brand new separate sub-scenario entity to keep baseline untouched!
-                save_target_name = f"{selected_name} + {scenario_mode.split(' ')[0]}"
-                vault[save_target_name] = {
-                    "df": calculated_df,
-                    "parent": selected_name,
-                    "data_source": scenario_mode,
-                    "grid_limit": params.get("new_grid_limit_kw", grid_limit) if scenario_mode == "Grid Upgrade Only" else grid_limit,
-                    "params": {"is_hardware": True, "hardware_params": params}
-                }
-                st.success(f"✅ Created new variant target: '{save_target_name}' !")
+        # =========================================================
+        # PIPELINE EXECUTION ENGINE (Vorschau generieren)
+        # =========================================================
+        if run_sim:
+            with st.spinner("Processing physical interval math cascade..."):
+                clean_base_df = baseline_df[['timestamp', 'consumption_kw']].copy()
                 
-            st.session_state['scenario_vault'] = vault
-            st.session_state['loaded_params']['hardware_params'] = params
-            st.session_state['active_sim_results'] = calculated_df
-            st.session_state['active_sim_mode'] = scenario_mode
-            st.session_state['active_sim_params'] = params
-            st.rerun()
+                if scenario_mode == "Solar PV Only":
+                    calculated_df = generate_solar_profile(clean_base_df, project_metadata, params)
+                    calculated_df['final_grid_load_kw'] = calculated_df['net_load_kw']
+                elif scenario_mode == "Battery (BESS) Only":
+                    calculated_df = run_isolated_scenario(clean_base_df, "Battery (Peak Shaving)", params, grid_limit, res)
+                elif scenario_mode == "Generator Only":
+                    calculated_df = simulate_generator_logic(clean_base_df, grid_limit, params, res)
+                elif scenario_mode == "Grid Upgrade Only":
+                    calculated_df = clean_base_df.copy()
+                    calculated_df['final_grid_load_kw'] = calculated_df['consumption_kw']
+                    calculated_df['battery_action_kw'] = 0.0
+                    calculated_df['solar_gen_kw'] = 0.0
+                    calculated_df['generator_action_kw'] = 0.0
+                else:
+                    df_1 = generate_solar_profile(clean_base_df, project_metadata, params['solar'])
+                    df_2 = simulate_battery_logic(df_1, grid_limit, params['battery'], res)
+                    calculated_df = simulate_generator_logic(df_2, grid_limit, params['generator'], res)
+                
+                # WRITE TO DRAFT MEMORY ONLY (Schmierblatt)
+                st.session_state['loaded_params']['hardware_params'] = params
+                st.session_state['active_sim_results'] = calculated_df
+                st.session_state['active_sim_mode'] = scenario_mode
+                st.session_state['active_sim_params'] = params
+                # We do NOT rerun here. We let the script continue so the Draft Monitor below catches it.
+
+        # =========================================================
+        # DRAFT MODE MONITOR (Tresor-Vergleich & Commit)
+        # =========================================================
+        active_preview_mode = st.session_state.get('active_sim_mode')
+        active_preview_params = st.session_state.get('active_sim_params')
+        is_draft = False
+        
+        # Check if we have calculated data in memory
+        if active_preview_params and active_preview_mode:
+            saved_mode = current_item.get('data_source')
+            saved_params = current_item.get('params', {}).get('hardware_params', {})
+            
+            # Compare memory with vault. If they differ, the user has uncommitted changes.
+            if active_preview_mode != saved_mode or active_preview_params != saved_params:
+                is_draft = True
+
+        if is_draft:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.warning("⚠️ **Unsaved Preview!**\nThe charts are showing a temporary draft. Click below to securely save these changes to the vault.")
+            
+            commit_label = "💾 Update Existing Variant" if is_variant_mode else "💾 Save as New Variant"
+            
+            # THE COMMIT BUTTON (Outside the form!)
+            if st.button(commit_label, type="primary", use_container_width=True):
+                if is_variant_mode:
+                    # Overwrite existing
+                    vault[selected_name]['df'] = st.session_state['active_sim_results']
+                    vault[selected_name]['data_source'] = active_preview_mode
+                    vault[selected_name]['params']['hardware_params'] = active_preview_params
+                    if active_preview_mode == "Grid Upgrade Only":
+                        vault[selected_name]['grid_limit'] = active_preview_params.get("new_grid_limit_kw", grid_limit)
+                    st.success(f"✅ Variant '{selected_name}' successfully updated!")
+                else:
+                    # Create new variant
+                    save_target_name = f"{selected_name} + {active_preview_mode.split(' ')[0]}"
+                    vault[save_target_name] = {
+                        "df": st.session_state['active_sim_results'],
+                        "parent": selected_name,
+                        "data_source": active_preview_mode,
+                        "grid_limit": active_preview_params.get("new_grid_limit_kw", grid_limit) if active_preview_mode == "Grid Upgrade Only" else grid_limit,
+                        "params": {"is_hardware": True, "hardware_params": active_preview_params}
+                    }
+                    st.session_state['last_selected_scen_tab2'] = save_target_name
+                    st.success(f"✅ New Variant '{save_target_name}' successfully secured!")
+                    
+                st.session_state['scenario_vault'] = vault
+                st.rerun()
 
     # --- 3. RENDERING VISUALIZATIONS & METRICS ---
     if 'active_sim_results' in st.session_state and st.session_state['active_sim_results'] is not None:
@@ -210,7 +247,12 @@ def render_tab2_scenarios():
         current_params = st.session_state.get('active_sim_params', {})
         
         with col_chart:
-            st.subheader(f"⚡ Live View: {selected_name}")
+            # Show a visual indicator if they are looking at a Draft
+            if is_draft:
+                st.subheader(f"⚡ Live View: [UNSAVED DRAFT PREVIEW]")
+            else:
+                st.subheader(f"⚡ Live View: {selected_name}")
+                
             render_feasibility_check(results, grid_limit, current_params, current_mode)
             
             fig_load = go.Figure()
@@ -248,39 +290,43 @@ def render_tab2_scenarios():
                     fig_soc.update_layout(height=230, margin=dict(t=10, b=10))
                     st.plotly_chart(fig_soc, use_container_width=True)
 
-        # RETRIEVE METRICS: Safely store outputs from the performance matrix for PDF rendering
+        # RETRIEVE METRICS
         peak_orig, min_reqs = render_performance_matrix(results, baseline_df, grid_limit, res, current_mode, current_params, project_metadata)
 
         # --- 4. ADVANCED PDF REPORT GENERATION ---
         st.divider()
         if st.button("📄 Generate Technical PDF Report", type="primary"):
-            with st.spinner("Compiling technical evaluation..."):
-                try:
-                    pdf_metrics = {
-                        "grid_limit": grid_limit, 
-                        "peak_raw": peak_orig, 
-                        "min_pwr": min_reqs['min_power_kw'], 
-                        "min_cap": min_reqs['true_min_capacity_kwh']
-                    }
-                    pdf_data = generate_tech_pdf(
-                        report_title=f"{report_name}_{current_mode.replace(' ', '')}", 
-                        metrics=pdf_metrics, 
-                        plot_data=results, 
-                        battery_enabled=(current_mode in ["Battery (BESS) Only", "Combined (All)"])
-                    )
-                    st.download_button(
-                        label="⬇️ Download Document", 
-                        data=pdf_data, 
-                        file_name=f"{report_name}_{current_mode.replace(' ', '')}.pdf", 
-                        mime="application/pdf"
-                    )
-                except Exception as pdf_error:
-                    st.error(f"Error during document compilation: {pdf_error}")
+            # Only allow PDF export if the data is saved (not in draft mode)
+            if is_draft:
+                st.error("Please Save (Commit) your changes to the vault before generating a PDF.")
+            else:
+                with st.spinner("Compiling technical evaluation..."):
+                    try:
+                        pdf_metrics = {
+                            "grid_limit": grid_limit, 
+                            "peak_raw": peak_orig, 
+                            "min_pwr": min_reqs['min_power_kw'], 
+                            "min_cap": min_reqs['true_min_capacity_kwh']
+                        }
+                        pdf_data = generate_tech_pdf(
+                            report_title=f"{report_name}_{current_mode.replace(' ', '')}", 
+                            metrics=pdf_metrics, 
+                            plot_data=results, 
+                            battery_enabled=(current_mode in ["Battery (BESS) Only", "Combined (All)"])
+                        )
+                        st.download_button(
+                            label="⬇️ Download Document", 
+                            data=pdf_data, 
+                            file_name=f"{report_name}_{current_mode.replace(' ', '')}.pdf", 
+                            mime="application/pdf"
+                        )
+                    except Exception as pdf_error:
+                        st.error(f"Error during document compilation: {pdf_error}")
 
         # --- 5. HARDWARE SUB-SCENARIO STORAGE & CLONING ---
         st.divider()
         st.write("### 💾 Create a Copy (Optional)")
-        st.info("Your changes are automatically saved to the active scenario! If you want to keep this setup and experiment with alternatives, save it as a new copy below.")
+        st.info("Want to keep this setup and experiment with alternatives? Save it as a new copy below.")
         
         default_name = f"{selected_name}_Copy"
         sub_scenario_name = st.text_input("Name this Copy:", value=default_name)
@@ -297,8 +343,12 @@ def render_tab2_scenarios():
             else:
                 vault_button_text = "⚠️ OVERWRITE Existing Variant"
         
-        if st.button(vault_button_text, type="primary", use_container_width=True, disabled=save_disabled):
-            vault[sub_scenario_name] = copy.deepcopy(vault[selected_name])
-            st.session_state['scenario_vault'] = vault
-            st.success(f"✅ Copy '{sub_scenario_name}' has been successfully created!")
-            st.rerun()
+        # Only allow copying if the current state is safely committed
+        if is_draft:
+            st.error("Please commit your current draft before duplicating the scenario.")
+        else:
+            if st.button(vault_button_text, type="primary", use_container_width=True, disabled=save_disabled):
+                vault[sub_scenario_name] = copy.deepcopy(vault[selected_name])
+                st.session_state['scenario_vault'] = vault
+                st.success(f"✅ Copy '{sub_scenario_name}' has been successfully created!")
+                st.rerun()
