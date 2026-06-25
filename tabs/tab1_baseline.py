@@ -125,6 +125,8 @@ def render_tab1_baseline():
             vault[active_baseline].get('grid_limit', proj_params.get('grid_limit_kw', 120.0))
         )
 
+        render_new_baseline_bridge(vault[active_baseline]['df'])
+
 
 
 def render_new_baseline_bridge(hochgeladenes_df: pd.DataFrame):
