@@ -48,7 +48,7 @@ def render_tab1_baseline():
     
     st.divider()
     
-    # --- 2. DATENQUELLE (Out of Form, damit der Map-Button in upload.py funktioniert!) ---
+    # --- 2. DATENQUELLE (Out of Form) ---
     st.write("### 📂 2. Data Source Configuration")
     data_source = st.radio("Select Data Source:", ["Upload CSV", "Generate Synthetic Load"], horizontal=True)
     
@@ -67,10 +67,11 @@ def render_tab1_baseline():
     st.write("### 📊 3. Project Meta & Financial Configuration")
     
     with st.form("baseline_form"):
-        proj_params = render_project_params(saved_params)
+        
+        # HIER IST DER FIX: Reihenfolge der Argumente umgedreht! (Wörterbuch zuerst, String danach)
+        proj_params = render_project_params(saved_params, active_baseline)
         
         st.divider()
-        # Hole die Finanzen und spritze das Autofill-Preset ein
         saved_fin = saved_params.get('financial_metadata', {})
         working_fin = saved_fin.copy()
         if preset_data:
@@ -85,13 +86,10 @@ def render_tab1_baseline():
     # --- 4. SAVE EXECUTION (After Form Submit) ---
     if submit_btn:
         with st.spinner("Processing energy profile & validating limits..."):
-            # Da filtered_df jetzt schon existiert (wenn hochgeladen), müssen wir sicherstellen,
-            # dass validate_and_process_data damit umgehen kann.
             df, is_valid, msg = validate_and_process_data(
                 data_source, uploaded_file, upload_params, syn_params, proj_params
             )
             
-            # Fallback falls validate_and_process_data das fertige filtered_df nicht zurückgibt
             if data_source == "Upload CSV" and filtered_df is not None and not filtered_df.empty:
                 df = filtered_df
                 is_valid = True

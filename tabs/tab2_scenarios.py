@@ -1,7 +1,7 @@
 # tabs/tab2_scenarios.py
 import streamlit as st
 import pandas as pd
-import copy  # WICHTIG: Wieder da für das Klonen der Szenarien!
+import copy  
 
 # Sub-components imports
 from tabs.tab2_components.solar_ui import render_solar_ui
@@ -27,13 +27,16 @@ def render_tab2_scenarios():
     selected_name = st.selectbox("### 📂 1. Select Scenario to View or Edit", list(vault.keys()))
     current_item = vault[selected_name]
 
-    if 'df' not in current_item:
-        st.info("⚠️ This project is still empty. Save a profile in '1️⃣ Baseline' first.")
-        return
-    
     parent_name = current_item.get('parent')
     is_variant_mode = parent_name and parent_name in vault
     base_data = vault[parent_name] if is_variant_mode else current_item
+    
+    # --- DER KUGELSICHERE TÜRSTEHER ---
+    # Blockiert sofort, wenn das DataFrame noch leer (None) ist!
+    if base_data.get('df') is None:
+        st.info(f"⚠️ The data for '{selected_name}' is still empty. Please go back to '1️⃣ Baseline', configure your data, and click 'Process & Save Baseline Profile' first.")
+        return
+    # --------------------------------------
     
     baseline_df = base_data['df'].copy()
     grid_limit = base_data.get('grid_limit', 120.0)
@@ -134,7 +137,7 @@ def render_tab2_scenarios():
                 st.session_state['last_selected_scen_tab2'] = target_name
                 st.rerun()
 
-    # RENDERING VISUALS (Diagramme via ausgelagerter Funktion)
+    # RENDERING VISUALS 
     if st.session_state.get('active_sim_results') is not None:
         with col_chart:
             render_results_and_charts(
@@ -143,7 +146,7 @@ def render_tab2_scenarios():
                 project_metadata, selected_name, is_draft, colors, report_name
             )
             
-        # CLONE UI (Originaler Code, direkt wieder in der linken Spalte eingebunden)
+        # CLONE UI
         with col_input:
             st.divider()
             st.write("### 💾 Create a Copy (Optional)")

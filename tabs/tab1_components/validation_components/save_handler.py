@@ -78,3 +78,24 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
             
         st.success(f"✅ Szenario '{scenario_name}' erfolgreich im Tresor gesichert! Du kannst nun fortfahren.")
         st.rerun()
+
+def save_profile_to_vault(vault, active_baseline, df, final_params, grid_limit):
+    """
+    Pure data-logic function. Saves the processed dataframe and parameters 
+    into the global scenario vault without rendering any UI buttons.
+    """
+    try:
+        vault[active_baseline] = {
+            'df': df,
+            'params': final_params,
+            'grid_limit': grid_limit,
+            'data_source': final_params.get('data_source', 'Unknown')
+        }
+        # Das st.session_state Update passiert sicherheitshalber auch hier nochmal
+        import streamlit as st
+        st.session_state['scenario_vault'] = vault
+        return True
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error saving to vault: {e}")
+        return False

@@ -6,8 +6,12 @@ import json
 import os
 
 def load_tariff_presets():
+    """
+    Loads the JSON file containing the official grid operator tariffs.
+    """
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    json_path = os.path.join(base_dir, "config", "tariff_presets.json")
+    # HIER IST DER FIX: Genau dein Dateiname mit einem 'r'
+    json_path = os.path.join(base_dir, "config", "tarif_presets.json") 
     try:
         with open(json_path, "r", encoding="utf-8") as f:
             return json.load(f)

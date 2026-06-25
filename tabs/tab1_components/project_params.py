@@ -4,11 +4,14 @@ import requests
 import folium
 from streamlit_folium import st_folium
 
-def render_project_params(loaded_metadata: dict, active_scenario: str) -> dict:
+def render_project_params(saved_params: dict, active_scenario: str) -> dict:
     """
-    Renders the UI for global project parameters, including dynamic geographical coordinates
-    for live weather API fetching via an interactive map and strict grid constraints.
+    Renders the UI for global project parameters.
+    Adapted to be 100% st.form-safe (removed live on_change callbacks).
     """
+    # Fallback for country/country selection parsing
+    loaded_metadata = saved_params.get('project_metadata', saved_params) if 'project_metadata' in saved_params else saved_params
+    
     with st.expander("📝 Enter General Project Data", expanded=True):
         col1, col2 = st.columns(2)
         
@@ -60,7 +63,6 @@ def render_project_params(loaded_metadata: dict, active_scenario: str) -> dict:
         }
         fallback = geo_defaults.get(country, geo_defaults["Other"])
 
-        # 2. Session State Bindings (Ensures map and inputs stay in sync)
         lat_key = f"lat_val_{active_scenario}"
         lon_key = f"lon_val_{active_scenario}"
         
@@ -69,9 +71,9 @@ def render_project_params(loaded_metadata: dict, active_scenario: str) -> dict:
         if lon_key not in st.session_state:
             st.session_state[lon_key] = float(loaded_metadata.get('longitude', fallback['lon']))
 
-        # 3. Geocoding Search Bar (Type address -> Get coordinates)
+        # 3. Geocoding Search Bar
         search_query = st.text_input(
-            "🔍 Search Address or City (Press Enter):", 
+            "🔍 Search Address or City:", 
             placeholder="e.g., Rotterdam, Industrieweg 1", 
             key=f"search_{active_scenario}"
         )
@@ -90,27 +92,27 @@ def render_project_params(loaded_metadata: dict, active_scenario: str) -> dict:
             except Exception:
                 st.error("Could not reach location service.")
 
-        # 4. Manual Inputs (Linked to state)
+        # 4. Manual Inputs (Without on_change callback to prevent form crash)
         col_lat, col_lon = st.columns(2)
         
-        def update_coords():
-            st.session_state[lat_key] = st.session_state[f"lat_input_{active_scenario}"]
-            st.session_state[lon_key] = st.session_state[f"lon_input_{active_scenario}"]
-
         latitude = col_lat.number_input(
-            "Latitude (Breitengrad)", value=st.session_state[lat_key], format="%.6f",
-            key=f"lat_input_{active_scenario}", on_change=update_coords
+            "Latitude (Breitengrad)", 
+            value=st.session_state[lat_key], 
+            format="%.6f",
+            key=f"lat_input_{active_scenario}"
         )
+        
         longitude = col_lon.number_input(
-            "Longitude (Längengrad)", value=st.session_state[lon_key], format="%.6f",
-            key=f"lon_input_{active_scenario}", on_change=update_coords
+            "Longitude (Längengrad)", 
+            value=st.session_state[lon_key], 
+            format="%.6f",
+            key=f"lon_input_{active_scenario}"
         )
         
         # 5. Interactive Map Rendering
         use_map = st.toggle("🗺️ Open Interactive Map", value=True, key=f"map_toggle_{active_scenario}")
         
         if use_map:
-            # Build the map centered on current coordinates
             m = folium.Map(location=[st.session_state[lat_key], st.session_state[lon_key]], zoom_start=12)
             folium.Marker(
                 [st.session_state[lat_key], st.session_state[lon_key]], 
@@ -118,16 +120,10 @@ def render_project_params(loaded_metadata: dict, active_scenario: str) -> dict:
                 icon=folium.Icon(color="red", icon="info-sign")
             ).add_to(m)
             
-            # Render map and listen for clicks
-            map_data = st_folium(m, height=350, use_container_width=True, key=f"folium_{active_scenario}")
-            
-            # If user clicks the map, update coordinates and reload UI
-            if map_data and map_data.get("last_clicked"):
-                st.session_state[lat_key] = map_data["last_clicked"]["lat"]
-                st.session_state[lon_key] = map_data["last_clicked"]["lng"]
-                st.rerun()
+            # Map is now mostly visual reference when inside a form
+            st_folium(m, height=350, use_container_width=True, key=f"folium_{active_scenario}")
 
-    # Return payload for the registry
+    # Return the payload securely grabbing the current widget values directly
     return {
         "project_name": project_name,
         "country": country,
@@ -135,6 +131,6 @@ def render_project_params(loaded_metadata: dict, active_scenario: str) -> dict:
         "grid_operator": grid_operator,
         "voltage_level": voltage_level,
         "strict_zero_export": strict_zero_export,
-        "latitude": st.session_state[lat_key],
-        "longitude": st.session_state[lon_key]
+        "latitude": latitude,
+        "longitude": longitude
     }
