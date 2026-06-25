@@ -11,7 +11,9 @@ from tabs.tab2_components.generator_ui import render_generator_ui
 from tabs.tab2_components.scenario_engine import run_isolated_scenario
 from tabs.tab2_components.grid_upgrade_ui import render_grid_upgrade_ui
 
-from logic.energy_logic import simulate_battery_logic, simulate_generator_logic 
+from logic.energy_logic import simulate_battery_logic, simulate_generator_logic
+from classes.models import SubScenario, FinancialParams
+from logic.storage_manager import add_sub_scenario_to_active
 
 # Neu ausgelagerte UI-Funktion NUR für Graphen und PDF
 from tabs.tab2_components.results_viewer import render_results_and_charts
@@ -173,3 +175,49 @@ def render_tab2_scenarios():
                     st.session_state['scenario_vault'] = vault
                     st.success(f"✅ Copy '{sub_scenario_name}' has been successfully created!")
                     st.rerun()
+
+
+
+def render_new_subscenario_bridge(aktuelles_batterie_kwh: float, aktuelles_batterie_kw: float, simuliertes_df: pd.DataFrame):
+    """
+    Diese Funktion unten in Tab 2 (oder in die Sidebar) packen.
+    Sie schnappt sich die Werte aus deinen bestehenden UI-Reglern.
+    """
+    st.divider()
+    st.subheader("💾 Lösungs-Ansatz speichern")
+    
+    szenario_name = st.text_input("Name für diese Lösung (z.B. 'Große Batterie')", value="Option 1: Batterie")
+    
+    # === DER MAGISCHE SCHALTER ===
+    finanzen_aktiv = st.toggle("Finanzdaten für dieses Setup berechnen? (Optional)")
+    
+    finanz_modul = None # Standardmäßig leer!
+    
+    if finanzen_aktiv:
+        with st.container():
+            st.info("Trage hier die geschätzten Kosten ein:")
+            col1, col2 = st.columns(2)
+            # Eine kleine Rechnung, um den User zu unterstützen (z.B. 400€ pro kWh)
+            default_capex = float(aktuelles_batterie_kwh * 400)
+            capex_input = col1.number_input("Hardware-Kaufpreis (€) [CAPEX]", value=default_capex, step=1000.0)
+            opex_input = col2.number_input("Jährliche Wartung (€) [OPEX]", value=float(default_capex*0.02), step=100.0) # ca. 2%
+            
+            # Wir erstellen das Modul
+            finanz_modul = FinancialParams(
+                capex=capex_input, 
+                opex_yearly=opex_input,
+                lifespan_years=15
+            )
+            
+    if st.button("Diesen Ansatz zum Vergleich hinzufügen"):
+        # 1. Wir bauen das Kind zusammen
+        neues_sub = SubScenario(
+            name=szenario_name,
+            battery_kwh=aktuelles_batterie_kwh,
+            battery_kw=aktuelles_batterie_kw,
+            simulated_profile=simuliertes_df, # Das fertige Ergebnis deiner Physik-Engine
+            financials=finanz_modul # Hier steckt jetzt entweder None oder das Geld drin!
+        )
+        
+        # 2. Ab an den Parent heften!
+        add_sub_scenario_to_active(neues_sub)

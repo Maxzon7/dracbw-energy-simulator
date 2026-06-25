@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from classes.models import BaseScenario, SubScenario
 
 def render_financial_dashboard(selected_profiles: list, selected_base: str, vault: dict):
     """
@@ -227,3 +228,84 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
                 )
     else:
         st.warning("Please select at least one hardware variant (with CAPEX configured) to view the financial ROI analysis.")
+
+
+def generate_15_year_cashflow(sub_scenario: SubScenario, base_scenario: BaseScenario) -> pd.DataFrame:
+    """
+    Das Herzstück der Finanzsimulation. 
+    Nimmt ein SubSzenario und berechnet die jährlichen Kosten/Gewinne.
+    Gibt 'None' zurück, wenn der User keine Finanzen aktiviert hat!
+    """
+    
+    # ==========================================
+    # 1. DER SICHERHEITSSCHALTER
+    # ==========================================
+    # Wenn der User in Tab 2 den Finanz-Schalter auf "OFF" gelassen hat,
+    # ist dieses Feld 'None'. Wir brechen sofort sicher ab.
+    if not sub_scenario.financials:
+        return None 
+        
+    fin = sub_scenario.financials
+    lifespan = fin.lifespan_years
+    
+    # Wir bereiten eine Tabelle vor (Jahr 0 bis Jahr 15)
+    jahre = list(range(lifespan + 1))
+    df = pd.DataFrame({"Jahr": jahre})
+    
+    # ==========================================
+    # 2. CAPEX (Hardware-Kauf im Jahr 0)
+    # ==========================================
+    df["Investition_Capex"] = 0.0
+    df.loc[df["Jahr"] == 0, "Investition_Capex"] = -fin.capex
+    
+    # ==========================================
+    # 3. OPEX (Laufende Wartung ab Jahr 1)
+    # ==========================================
+    # Die Wartung steigt jedes Jahr um die allgemeine Inflationsrate
+    opex_liste = [0.0] # Jahr 0 hat keine Wartung
+    for jahr in range(1, lifespan + 1):
+        # OPEX = Basiswert * (1 + Inflation)^Jahr
+        laufende_kosten = fin.opex_yearly * ((1 + fin.inflation_rate) ** jahr)
+        opex_liste.append(-laufende_kosten)
+        
+    df["Wartung_Opex"] = opex_liste
+    
+    # ==========================================
+    # 4. DIE NETZKOSTEN & ERSPARNISSE (Platzhalter für Tarif-Logik)
+    # ==========================================
+    # HIER kommt später die Verknüpfung zu deiner tarrif_calc.py rein.
+    # Für den Anfang tun wir so, als ob das System jedes Jahr fiktiv 
+    # 25.000 € an Strafen einspart (wachsend mit der Energiepreissteigerung).
+    
+    ersparnis_liste = [0.0]
+    basis_ersparnis_pro_jahr = 25000.0 # TODO: Durch echte Tarif-Ersparnis ersetzen
+    
+    for jahr in range(1, lifespan + 1):
+        ersparnis = basis_ersparnis_pro_jahr * ((1 + fin.energy_price_growth) ** jahr)
+        ersparnis_liste.append(ersparnis)
+        
+    df["Eingesparte_Netzkosten"] = ersparnis_liste
+    
+    # ==========================================
+    # 5. CASHFLOW & AMORTISATION BERECHNEN
+    # ==========================================
+    # Was bleibt am Ende des Jahres auf dem Konto?
+    df["Netto_Cashflow"] = df["Investition_Capex"] + df["Wartung_Opex"] + df["Eingesparte_Netzkosten"]
+    
+    # Der Kontostand über die Jahre (Kumuliert)
+    # Hieran sehen wir später, ab wann die Linie über Null geht (Break-Even!)
+    df["Kumulierter_Cashflow"] = df["Netto_Cashflow"].cumsum()
+    
+    return df
+
+def get_payback_year(cashflow_df: pd.DataFrame) -> float:
+    """Sucht das Jahr, in dem der kumulierte Cashflow positiv wird (Break-Even)."""
+    if cashflow_df is None:
+        return None
+        
+    gewinn_jahre = cashflow_df[cashflow_df["Kumulierter_Cashflow"] > 0]
+    
+    if gewinn_jahre.empty:
+        return -1.0 # Bedeutet: System amortisiert sich innerhalb von 15 Jahren NIE!
+        
+    return gewinn_jahre["Jahr"].iloc[0] # Gibt das erste Jahr im Plus zurück

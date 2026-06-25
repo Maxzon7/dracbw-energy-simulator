@@ -2,6 +2,9 @@
 import streamlit as st
 import pandas as pd
 
+from classes.models import BaseScenario, Tariff
+from logic.storage_manager import save_base_scenario
+
 # UI Components imports
 from tabs.tab1_components.upload import render_upload_ui
 from tabs.tab1_components.synthetic_load import render_synthetic_load_ui
@@ -121,3 +124,45 @@ def render_tab1_baseline():
             vault[active_baseline]['df'], 
             vault[active_baseline].get('grid_limit', proj_params.get('grid_limit_kw', 120.0))
         )
+
+
+
+def render_new_baseline_bridge(hochgeladenes_df: pd.DataFrame):
+    """
+    Diese Funktion einfach ganz unten in Tab 1 aufrufen. 
+    Sie baut das Fundament für unser neues Klassensystem, stört aber den alten Code nicht.
+    """
+    st.divider()
+    st.subheader("🏗️ Schritt 2: Projekt-Fundament für Finanz-Analyse sichern")
+    
+    with st.form("basis_szenario_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            projekt_name = st.text_input("Name des Standorts/Projekts", value="Werk Hamburg 2026")
+        
+        with col2:
+            # Hier simulieren wir die Tarifauswahl. Später kann das aus deiner JSON kommen.
+            tarif_wahl = st.selectbox(
+                "Aktueller Netztarif", 
+                ["Stedin Grootverbruik", "Enexis GTO", "Eigener Tarif"]
+            )
+            
+        submitted = st.form_submit_button("Projekt & Tarif bestätigen")
+        
+        if submitted:
+            # 1. Wir bauen den Tarif zusammen (Dummy-Werte für den Anfang)
+            if tarif_wahl == "Stedin Grootverbruik":
+                gewählter_tarif = Tariff(name="Stedin 2026", contracted_capacity_kw=500, fixed_costs_per_year=2000, price_per_kw_peak=45.0)
+            else:
+                gewählter_tarif = Tariff(name="Standard", contracted_capacity_kw=0, fixed_costs_per_year=0, price_per_kw_peak=30.0)
+            
+            # 2. Wir packen alles in unseren neuen Klassen-Ordner
+            neues_basis_projekt = BaseScenario(
+                name=projekt_name,
+                original_profile=hochgeladenes_df, # Das DataFrame aus deinem bisherigen Code!
+                base_tariff=gewählter_tarif
+            )
+            
+            # 3. Ab in den Tresor!
+            save_base_scenario(neues_basis_projekt)
+            st.success(f"✅ Projekt '{projekt_name}' mit Tarif '{gewählter_tarif.name}' wurde erfolgreich im Hintergrund angelegt!")

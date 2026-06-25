@@ -3,6 +3,8 @@ import pandas as pd
 import json
 import zipfile
 import io
+import streamlit as st
+from classes.models import BaseScenario, SubScenario
 
 def create_drac_export(scenarios_dict: dict) -> bytes:
     """
@@ -73,3 +75,43 @@ def parse_drac_import(uploaded_file, import_prefix="") -> dict:
             reconstructed_scenarios[new_name] = scen_dict
             
     return reconstructed_scenarios
+
+
+def init_class_based_storage():
+    """
+    Erstellt die neue 'Daten-Schublade' im Session State, falls sie noch nicht existiert.
+    Stört die alten Speicher-Variablen absolut nicht.
+    """
+    if "project_portfolio" not in st.session_state:
+        # Eine Liste, die alle Hauptprojekte (BaseScenarios) hält
+        st.session_state.project_portfolio = [] 
+        
+    if "active_base_id" not in st.session_state:
+        # Merkt sich, an welchem Standort der User gerade arbeitet
+        st.session_state.active_base_id = None 
+
+def save_base_scenario(base_scenario: BaseScenario):
+    """Speichert ein neues Basis-Szenario und setzt es als 'aktiv'."""
+    init_class_based_storage()
+    st.session_state.project_portfolio.append(base_scenario)
+    st.session_state.active_base_id = base_scenario.id
+
+def get_active_base_scenario() -> BaseScenario:
+    """Holt den Aktenordner (Parent), an dem der User gerade in Tab 2 bastelt."""
+    init_class_based_storage()
+    for scenario in st.session_state.project_portfolio:
+        if scenario.id == st.session_state.active_base_id:
+            return scenario
+    return None
+
+def add_sub_scenario_to_active(sub_scenario: SubScenario):
+    """
+    Nimmt einen Lösungsversuch (Child) und heftet ihn an den aktuellen Aktenordner (Parent).
+    """
+    active_base = get_active_base_scenario()
+    if active_base:
+        active_base.add_sub_scenario(sub_scenario)
+        # Kurzes Feedback im UI (optional, aber gut fürs Debugging)
+        st.success(f"Szenario '{sub_scenario.name}' sicher im Hintergrund gespeichert!")
+    else:
+        st.error("Fehler: Kein Basis-Szenario gefunden. Bitte zuerst Tab 1 ausfüllen.")
