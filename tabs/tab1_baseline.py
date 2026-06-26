@@ -2,8 +2,14 @@
 import streamlit as st
 import pandas as pd
 
-from classes.models import BaseScenario, Tariff
-from logic.storage_manager import save_base_scenario
+# --- NEUE KLASSEN-IMPORTS (Fix für den ImportError) ---
+from classes.models import Tariff, BaseScenario
+from logic.storage_manager import (
+    get_all_base_scenarios,
+    create_empty_base_scenario,
+    save_profile_to_base,
+    get_base_scenario
+)
 
 # UI Components imports
 from tabs.tab1_components.upload import render_upload_ui
@@ -11,72 +17,74 @@ from tabs.tab1_components.synthetic_load import render_synthetic_load_ui
 from tabs.tab1_components.project_params import render_project_params
 from tabs.tab1_components.financial_ui import render_preset_selector, render_financial_inputs
 from tabs.tab1_components.chart import render_baseline_chart
-
-# Validation & Save imports
 from tabs.tab1_components.validation_ui import validate_and_process_data
-from tabs.tab1_components.validation_components.save_handler import save_profile_to_vault
 
 def render_tab1_baseline():
     st.header("Baseline Data Configuration")
     
-    vault = st.session_state.get('scenario_vault', {})
-    baselines = [k for k, v in vault.items() if not v.get('parent')]
+    # ==========================================
+    # 1. DATEN DIREKT AUS DEM NEUEN TRESOR HOLEN
+    # ==========================================
+    alle_basis_projekte = get_all_base_scenarios()
+    baselines = [proj.name for proj in alle_basis_projekte]
     
-    # --- BASELINE SELECTION OR CREATION ---
     col_sel, col_new = st.columns([2, 1])
     with col_sel:
         if baselines:
-            active_baseline = st.selectbox("Select Active Baseline to Edit:", baselines)
+            active_baseline_name = st.selectbox("Select Active Baseline to Edit:", baselines)
+            st.session_state.active_base_name = active_baseline_name
         else:
             st.info("No baseline profiles exist yet. Create one below.")
-            active_baseline = "New_Baseline"
+            active_baseline_name = "New_Baseline"
             
     with col_new:
         st.write("<br>", unsafe_allow_html=True)
         if st.button("➕ Create New Baseline", use_container_width=True):
             new_name = f"Baseline_{len(baselines)+1}"
-            vault[new_name] = {'df': None, 'params': {}}
-            st.session_state['scenario_vault'] = vault
+            
+            # --- DER MAGISCHE KLASSEN-AUFRUF (Ersetzt das alte Dictionary!) ---
+            create_empty_base_scenario(new_name)
             st.rerun()
 
-    if not baselines and active_baseline == "New_Baseline":
-        vault["New_Baseline"] = {'df': None, 'params': {}}
-        st.session_state['scenario_vault'] = vault
+    # Fallback, falls noch gar keins existiert
+    if not baselines and active_baseline_name == "New_Baseline":
+        create_empty_base_scenario("New_Baseline")
+
+    # Wir holen uns das tatsächliche Objekt, um damit zu arbeiten
+    active_scenario_obj = get_base_scenario(active_baseline_name)
 
     st.divider()
 
-    # --- 1. DAS REAKTIVE AUTOFILL-DROPDOWN (Out of Form) ---
+    # --- 1. DAS REAKTIVE AUTOFILL-DROPDOWN ---
     st.write("### ⚙️ 1. Grid Tariff Autofill")
     preset_label, preset_data = render_preset_selector()
     
     st.divider()
     
-    # --- 2. DATENQUELLE (Out of Form) ---
+    # --- 2. DATENQUELLE ---
     st.write("### 📂 2. Data Source Configuration")
     data_source = st.radio("Select Data Source:", ["Upload CSV", "Generate Synthetic Load"], horizontal=True)
     
-    saved_params = vault[active_baseline].get('params', {})
+    # Platzhalter für UI-Kompatibilität
+    saved_params = {} 
     uploaded_file, filtered_df, upload_params = None, None, {}
     syn_params = {}
     
     if data_source == "Upload CSV":
-        uploaded_file, filtered_df, upload_params = render_upload_ui(active_baseline, saved_params)
+        uploaded_file, filtered_df, upload_params = render_upload_ui(active_baseline_name, saved_params)
     else:
-        syn_params = render_synthetic_load_ui(active_baseline)
+        syn_params = render_synthetic_load_ui(active_baseline_name)
 
     st.divider()
 
-    # --- 3. DIE SCHALLDICHTE KABINE (Das st.form nur für Parameter & Finanzen) ---
+    # --- 3. PROJECT META & FINANZEN ---
     st.write("### 📊 3. Project Meta & Financial Configuration")
     
     with st.form("baseline_form"):
-        
-        # HIER IST DER FIX: Reihenfolge der Argumente umgedreht! (Wörterbuch zuerst, String danach)
-        proj_params = render_project_params(saved_params, active_baseline)
+        proj_params = render_project_params(saved_params, active_baseline_name)
         
         st.divider()
-        saved_fin = saved_params.get('financial_metadata', {})
-        working_fin = saved_fin.copy()
+        working_fin = saved_params.get('financial_metadata', {}).copy()
         if preset_data:
             working_fin.update(preset_data)
             working_fin['tariff_mode'] = preset_label
@@ -86,7 +94,7 @@ def render_tab1_baseline():
         st.divider()
         submit_btn = st.form_submit_button("💾 Process & Save Baseline Profile", type="primary", use_container_width=True)
         
-    # --- 4. SAVE EXECUTION (After Form Submit) ---
+    # --- 4. SAVE EXECUTION ---
     if submit_btn:
         with st.spinner("Processing energy profile & validating limits..."):
             df, is_valid, msg = validate_and_process_data(
@@ -98,73 +106,33 @@ def render_tab1_baseline():
                 is_valid = True
             
             if is_valid and df is not None:
-                final_params = {
-                    "data_source": data_source,
-                    "resolution": upload_params.get('resolution', 15) if data_source == "Upload CSV" else 15,
-                    "project_metadata": proj_params,
-                    "financial_metadata": fin_params
-                }
+                limit_kw = proj_params.get('grid_limit_kw', 120.0)
                 
-                success = save_profile_to_vault(
-                    vault, active_baseline, df, final_params, proj_params.get('grid_limit_kw', 120.0)
-                )
+                # ==========================================
+                # NEU: Wir speichern das Profil DIREKT in der Klasse
+                # ==========================================
+                save_profile_to_base(active_baseline_name, df, limit_kw)
                 
-                if success:
-                    st.session_state['scenario_vault'] = vault
-                    st.success(f"✅ Baseline '{active_baseline}' successfully saved with active tariffs!")
-                    st.rerun() 
+                # Wir aktualisieren auch den an die Klasse angehängten Tarif
+                if active_scenario_obj:
+                    active_scenario_obj.base_tariff.name = preset_label if preset_label else "Custom"
+                    active_scenario_obj.base_tariff.contracted_capacity_kw = limit_kw
+                
+                st.success(f"✅ Baseline '{active_baseline_name}' successfully saved!")
+                st.rerun() 
             else:
                 st.error(f"Validation failed: {msg}")
 
     # --- 5. CHART RENDERING ---
-    if vault[active_baseline].get('df') is not None:
+    if active_scenario_obj and active_scenario_obj.original_profile is not None:
         st.divider()
-        st.write(f"### 📈 Current Profile: {active_baseline}")
+        st.write(f"### 📈 Current Profile: {active_baseline_name}")
+        
+        # Wir rufen das Diagramm mit den Werten direkt aus unserer Klasse auf!
         render_baseline_chart(
-            vault[active_baseline]['df'], 
-            vault[active_baseline].get('grid_limit', proj_params.get('grid_limit_kw', 120.0))
+            active_scenario_obj.original_profile, 
+            active_scenario_obj.base_tariff.contracted_capacity_kw
         )
 
-        render_new_baseline_bridge(vault[active_baseline]['df'])
-
-
-
-def render_new_baseline_bridge(hochgeladenes_df: pd.DataFrame):
-    """
-    Diese Funktion einfach ganz unten in Tab 1 aufrufen. 
-    Sie baut das Fundament für unser neues Klassensystem, stört aber den alten Code nicht.
-    """
-    st.divider()
-    st.subheader("🏗️ Schritt 2: Projekt-Fundament für Finanz-Analyse sichern")
-    
-    with st.form("basis_szenario_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            projekt_name = st.text_input("Name des Standorts/Projekts", value="Werk Hamburg 2026")
-        
-        with col2:
-            # Hier simulieren wir die Tarifauswahl. Später kann das aus deiner JSON kommen.
-            tarif_wahl = st.selectbox(
-                "Aktueller Netztarif", 
-                ["Stedin Grootverbruik", "Enexis GTO", "Eigener Tarif"]
-            )
-            
-        submitted = st.form_submit_button("Projekt & Tarif bestätigen")
-        
-        if submitted:
-            # 1. Wir bauen den Tarif zusammen (Dummy-Werte für den Anfang)
-            if tarif_wahl == "Stedin Grootverbruik":
-                gewählter_tarif = Tariff(name="Stedin 2026", contracted_capacity_kw=500, fixed_costs_per_year=2000, price_per_kw_peak=45.0)
-            else:
-                gewählter_tarif = Tariff(name="Standard", contracted_capacity_kw=0, fixed_costs_per_year=0, price_per_kw_peak=30.0)
-            
-            # 2. Wir packen alles in unseren neuen Klassen-Ordner
-            neues_basis_projekt = BaseScenario(
-                name=projekt_name,
-                original_profile=hochgeladenes_df, # Das DataFrame aus deinem bisherigen Code!
-                base_tariff=gewählter_tarif
-            )
-            
-            # 3. Ab in den Tresor!
-            save_base_scenario(neues_basis_projekt)
-            st.success(f"✅ Projekt '{projekt_name}' mit Tarif '{gewählter_tarif.name}' wurde erfolgreich im Hintergrund angelegt!")
+# Die Funktion render_new_baseline_bridge wurde hier komplett GELÖSCHT,
+# da wir sie nicht mehr brauchen. Tab 1 ist jetzt 100% nativ auf Klassen!
