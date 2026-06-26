@@ -3,47 +3,36 @@ import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
 
-# --- NEW CLASS-BASED IMPORTS ---
 from logic.storage_manager import get_all_base_scenarios
 from tabs.tab3_components.financial_engine import generate_15_year_cashflow, get_payback_year
 from tabs.tab3_components.tarrif_calc import render_tariff_builder_ui
 
 def render_tab3_comparison():
-    """
-    Renders the advanced Scenario Comparison Suite with automated Delta-KPI tracking
-    for parents (BaseScenario) and child solutions (SubScenarios). 
-    """
     st.write("## ⚖️ Advanced Comparison Suite")
     
-    # 1. Fetch data from our new Class Vault
     bases = get_all_base_scenarios()
-    
     if not bases:
         st.warning("No saved Scenarios found. Please create a Baseline in Tab 1.")
         return
         
     base_options = [b.name for b in bases]
-
     st.write("### 1. Select the Base Scenario")
     selected_base_name = st.selectbox("Baseline Reference Profile:", options=base_options)
     
-    # Extract the actual class object
     selected_base_obj = next((b for b in bases if b.name == selected_base_name), None)
     
     if not selected_base_obj or selected_base_obj.original_profile is None:
         st.info("No data in this baseline yet. Please process data in Tab 1.")
         return
 
-    # Autodetect Variants (Children)
     linked_subs = selected_base_obj.sub_scenarios
     sub_names = [sub.name for sub in linked_subs]
     
     auto_compare = False
     if sub_names:
-        st.success(f"🔗 {len(sub_names)} associated variants (Sub-Scenarios) found for '{selected_base_name}'!")
+        st.success(f"🔗 {len(sub_names)} associated variants found for '{selected_base_name}'!")
         auto_compare = st.checkbox("Automatically overlay all associated sub-scenarios", value=True)
 
-    # Multiselect for Custom Comparisons
     all_options = [selected_base_name] + sub_names
     default_selection = [selected_base_name]
     if auto_compare:
@@ -55,7 +44,6 @@ def render_tab3_comparison():
         st.warning("Please choose at least one scenario for the comparison.")
         return
 
-    # Helper function to grab the correct DataFrame from our objects
     def get_df_for_name(name):
         if name == selected_base_name:
             return selected_base_obj.original_profile
@@ -69,16 +57,22 @@ def render_tab3_comparison():
     
     for name in selected_profiles:
         df = get_df_for_name(name)
-        if df is not None:
+        if df is not None and not df.empty:
             is_base = (name == selected_base_name)
             l_width = 3 if is_base else 1.5
             l_color = "#333333" if is_base else None 
             
-            # Switch to final grid load if available (Sub-scenarios)
-            y_col = 'final_grid_load_kw' if 'final_grid_load_kw' in df.columns else 'consumption_kw'
+            # Robustes Auslesen der Spalten (verhindert leere Diagramme)
+            y_col = 'final_grid_load_kw'
+            if y_col not in df.columns:
+                y_col = 'consumption_kw'
+            if y_col not in df.columns:
+                y_col = df.columns[-1] # Absoluter Fallback
+                
+            x_col = df['timestamp'] if 'timestamp' in df.columns else df.index
             
             fig.add_trace(go.Scatter(
-                x=df['timestamp'], y=df[y_col],
+                x=x_col, y=df[y_col],
                 mode='lines',
                 line=dict(width=l_width, color=l_color),
                 name=f"🏢 {name} (Base)" if is_base else f"🌿 {name}"
@@ -107,7 +101,6 @@ def render_tab3_comparison():
             if not sub_obj: continue
                 
             sub_df = sub_obj.simulated_profile
-            # Check if variant has a custom tariff, otherwise use base limit
             sub_limit = sub_obj.custom_tariff.contracted_capacity_kw if sub_obj.custom_tariff else base_limit
             
             y_col = 'final_grid_load_kw' if 'final_grid_load_kw' in sub_df.columns else 'consumption_kw'
@@ -135,14 +128,10 @@ def render_tab3_comparison():
         render_tariff_builder_ui()
         st.divider()
         
-        # Call the new integrated Class-based CFO Cockpit
         active_subs = [s for s in linked_subs if s.name in selected_profiles]
         render_cfo_cockpit_from_classes(selected_base_obj, active_subs)
 
 def render_cfo_cockpit_from_classes(base_scenario, selected_subs):
-    """
-    Renders the Financial Data dynamically based on the presence of FinancialParams in the objects.
-    """
     st.header("📊 Executive CFO Dashboard")
     
     if not selected_subs:
@@ -152,37 +141,37 @@ def render_cfo_cockpit_from_classes(base_scenario, selected_subs):
     has_financials = any(sub.financials is not None for sub in selected_subs)
     
     if not has_financials:
-        # --- TECHNICAL ONLY MODE ---
         st.warning("⚙️ **Technical Mode**: No financial data was entered in Tab 2. Showing performance summary only.")
-        
         tech_data = []
         for sub in selected_subs:
             tech_data.append({
-                "Scenario": sub.name,
-                "Battery (kWh)": sub.battery_kwh,
-                "Battery Power (kW)": sub.battery_kw,
-                "Solar (kWp)": sub.solar_kwp,
-                "Hardware Added?": "Yes" if (sub.battery_kwh > 0 or sub.solar_kwp > 0) else "No"
+                "Scenario": sub.name, "Battery (kWh)": sub.battery_kwh, "Battery Power (kW)": sub.battery_kw,
+                "Solar (kWp)": sub.solar_kwp, "Hardware Added?": "Yes" if (sub.battery_kwh > 0 or sub.solar_kwp > 0) else "No"
             })
         st.table(pd.DataFrame(tech_data))
         
     else:
-        # --- FINANCIAL CFO MODE ---
         st.success("💰 **Financial Mode Active**: Calculating Cashflows & ROI based on 15-Year Lifespan.")
-        
         col1, col2 = st.columns(2)
         
-        cashflow_diagrams_data = pd.DataFrame()
         kpi_data = []
+        
+        # Plotly Setup für das Finanz-Diagramm (Robuster als st.line_chart!)
+        fig_cf = go.Figure()
         
         for sub in selected_subs:
             if sub.financials:
                 df_cashflow = generate_15_year_cashflow(sub, base_scenario)
                 payback = get_payback_year(df_cashflow)
                 
-                if cashflow_diagrams_data.empty:
-                    cashflow_diagrams_data["Year"] = df_cashflow["Jahr"] # Internal mapping
-                cashflow_diagrams_data[sub.name] = df_cashflow["Kumulierter_Cashflow"]
+                # Trace hinzufügen
+                fig_cf.add_trace(go.Scatter(
+                    x=df_cashflow["Jahr"],
+                    y=df_cashflow["Kumulierter_Cashflow"],
+                    mode='lines+markers',
+                    name=sub.name,
+                    line=dict(width=3)
+                ))
                 
                 kpi_data.append({
                     "Scenario": sub.name,
@@ -197,5 +186,6 @@ def render_cfo_cockpit_from_classes(base_scenario, selected_subs):
             
         with col2:
             st.markdown("### 📈 Cumulative Cashflow (15 Years)")
-            cashflow_diagrams_data.set_index("Year", inplace=True) 
-            st.line_chart(cashflow_diagrams_data)
+            fig_cf.update_layout(height=400, hovermode="x unified", xaxis_title="Years", yaxis_title="Cashflow (€)", margin=dict(l=0, r=0, t=10, b=0))
+            fig_cf.add_hline(y=0, line_dash="dash", line_color="red", annotation_text="Break-Even", annotation_position="bottom right")
+            st.plotly_chart(fig_cf, use_container_width=True)
