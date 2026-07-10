@@ -57,15 +57,15 @@ def main():
         st.session_state['enable_financials'] = st.sidebar.toggle("💰 Enable Financial Evaluation", value=st.session_state['enable_financials'])
         st.sidebar.markdown("<br><br>", unsafe_allow_html=True)
         
+        # In app.py innerhalb der main() Verzweigung bei "Save & Close Project":
         if st.sidebar.button("💾 Save & Close Project", type="primary", use_container_width=True):
-            p_name = st.session_state['active_project_name']
-            st.session_state['project_hub'][p_name]['scenario_vault'] = st.session_state['scenario_vault']
-            st.session_state['project_hub'][p_name]['active_scenario_name'] = st.session_state['active_scenario_name']
+            # Data is already maintained inline within project_hub via storage_manager
             st.session_state['active_project_name'] = None
+            st.session_state['active_base_name'] = None
             st.session_state['scenario_vault'] = {}
             st.session_state['active_scenario_name'] = None
-            st.rerun() 
-            
+            st.rerun()
+        
         render_workspace(st.session_state['t'])
 
 if __name__ == "__main__":
