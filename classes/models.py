@@ -56,18 +56,22 @@ class SubScenario:
 # ==========================================
 # 4. BASIS-SZENARIO (Der Parent / Das Fundament)
 # ==========================================
+# classes/models.py
+
 @dataclass
 class BaseScenario:
-    """Der Hauptordner für einen Standort inklusive Status Quo"""
+    """The main directory for a location including its status quo energy profile."""
     name: str
-    original_profile: pd.DataFrame # Das hochgeladene CSV/Excel Lastprofil
-    base_tariff: Tariff            # Der aktuell genutzte Tarif
+    original_profile: pd.DataFrame # The uploaded CSV/Excel load profile
+    base_tariff: Tariff            # The grid tariff currently in use
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     
-    # Die Liste aller Lösungsversuche (Children)
-    # Startet automatisch als leere Liste []
+    # The list of all attempted sub-scenario solutions (children)
     sub_scenarios: List[SubScenario] = field(default_factory=list) 
     
+    # NEW: Secure storage vault to capture Tab 1 form entries (project meta & financial parameters)
+    metadata: dict = field(default_factory=dict)
+    
     def add_sub_scenario(self, sub: SubScenario):
-        """Hilfsfunktion, um schnell ein neues Child hinzuzufügen"""
+        """Helper function to quickly attach a child scenario to this parent configuration."""
         self.sub_scenarios.append(sub)

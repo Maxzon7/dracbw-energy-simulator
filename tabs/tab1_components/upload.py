@@ -3,7 +3,7 @@ import streamlit as st
 import pandas as pd
 from logic.energy_logic import load_and_clean_csv, process_consumption_data
 
-TIME_SYNONYMS = ['timestamp', 'zeit', 'datum', 'date', 'time', 'uhrzeit', 'datetime']
+TIME_SYNONYMS = ['timestamp', 'zeit', 'datum', 'date', 'time', 'uhrzeit', 'datetime', '#']
 POWER_SYNONYMS = ['kw', 'consumption', 'leistung', 'wirkleistung', 'power', 'load', 'verbrauch', 'watt', 'p_tot']
 
 def guess_columns(raw_cols):
@@ -27,15 +27,33 @@ def render_csv_mapping_dialog(raw_df, active_scenario):
     time_idx = raw_cols.index(guessed_time) if guessed_time in raw_cols else 0
     default_power_list = [guessed_power] if guessed_power in raw_cols else []
     
+    # Intelligent automatic guessing for separate time-of-day columns (e.g. Dutch grid data)
+    tod_options = ["None (Combined Column)"] + raw_cols
+    tod_idx = 0
+    for idx, col in enumerate(raw_cols):
+        if col.lower() in ['code', 'uhrzeit', 'time_of_day'] and col != guessed_time:
+            tod_idx = idx + 1 # Offset by 1 due to the "None" placeholder
+            break
+    
     st.divider()
     col_map1, col_map2, col_map3 = st.columns(3)
-    final_time_col = col_map1.selectbox("🕒 Time/Date Column", options=raw_cols, index=time_idx, key=f"dlg_time_{active_scenario}")
+    
+    # Primary date/time picker
+    final_time_col = col_map1.selectbox("🕒 Primary Date Column", options=raw_cols, index=time_idx, key=f"dlg_time_{active_scenario}")
+    
+    # NEW: Explicit user control for split time-of-day columns
+    final_tod_col = col_map1.selectbox("🕒 Time of Day Column (Optional)", options=tod_options, index=tod_idx, key=f"dlg_tod_{active_scenario}")
     
     final_power_cols = col_map2.multiselect("⚡ Power Column(s) (Select all that apply)", options=raw_cols, default=default_power_list, key=f"dlg_pwr_{active_scenario}")
     
-    unit_mode = col_map3.selectbox("📊 Data Unit in File", options=["Kilowatt (kW)", "Watt (W)"], index=0, key=f"dlg_unit_{active_scenario}")
+    # NEW: Expanded selection matrix to natively support energy-to-power conversions for kWh files
+    unit_mode = col_map3.selectbox("📊 Data Unit in File", options=["Kilowatt (kW)", "Watt (W)", "Kilowatt-hour (kWh)"], index=0, key=f"dlg_unit_{active_scenario}")
     
-    final_unit = "kW" if "Kilowatt" in unit_mode else "W"
+    final_unit = "kW"
+    if "Watt (W)" in unit_mode:
+        final_unit = "W"
+    elif "Kilowatt-hour (kWh)" in unit_mode:
+        final_unit = "kWh"
     
     st.divider()
     if not final_power_cols:
@@ -43,6 +61,7 @@ def render_csv_mapping_dialog(raw_df, active_scenario):
         
     if st.button("🤝 Confirm Mapping & Load Data", type="primary", use_container_width=True, key=f"dlg_confirm_{active_scenario}", disabled=len(final_power_cols)==0):
         st.session_state[f"mapped_time_col_{active_scenario}"] = final_time_col
+        st.session_state[f"mapped_time_of_day_col_{active_scenario}"] = None if final_tod_col == "None (Combined Column)" else final_tod_col
         st.session_state[f"mapped_power_col_{active_scenario}"] = final_power_cols 
         st.session_state[f"mapped_unit_{active_scenario}"] = final_unit
         st.session_state[f"csv_mapping_ready_{active_scenario}"] = True
@@ -111,10 +130,19 @@ def render_upload_ui(active_scenario: str, p: dict):
             
             if st.session_state.get(f"csv_mapping_ready_{active_scenario}", False):
                 user_time_col = st.session_state[f"mapped_time_col_{active_scenario}"]
+                user_tod_col = st.session_state.get(f"mapped_time_of_day_col_{active_scenario}", None)
                 user_power_col = st.session_state[f"mapped_power_col_{active_scenario}"]
                 user_unit = st.session_state[f"mapped_unit_{active_scenario}"]
                 
-                data = process_consumption_data(df=raw_df, interval_minutes=res, time_col=user_time_col, power_col=user_power_col, unit=user_unit)
+                # FIX: Explicitly passing the user-selected time-of-day column to the analytical core
+                data = process_consumption_data(
+                    df=raw_df, 
+                    interval_minutes=res, 
+                    time_col=user_time_col, 
+                    time_of_day_col=user_tod_col, 
+                    power_col=user_power_col, 
+                    unit=user_unit
+                )
                 
                 min_date, max_date = data['timestamp'].min().date(), data['timestamp'].max().date()
                 selected_dates = st.date_input(t.get("analysis_period", "Analysis Period"), [min_date, max_date], key=f"dates_csv_{active_scenario}")
