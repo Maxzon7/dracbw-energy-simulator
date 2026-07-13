@@ -25,6 +25,9 @@ def render_results_and_charts(results, baseline_df, grid_limit, res, current_mod
     
     if current_mode in ["Solar PV Only", "Combined (All)"] and 'solar_gen_kw' in results.columns:
         fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['solar_gen_kw'], name="Solar Yield", line=dict(color='#FFC107', width=1), fill='tozeroy'))
+    if current_mode in ["Battery (BESS) Only", "Combined (All)"] and 'battery_action_kw' in results.columns:
+        battery_discharge = results['battery_action_kw'].clip(lower=0.0)
+        fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=battery_discharge, name="Battery Discharge", line=dict(color=colors['act'], width=1), fill='tozeroy'))
     if current_mode in ["Generator Only", "Combined (All)"] and 'generator_action_kw' in results.columns:
         fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['generator_action_kw'], name="Generator Output", line=dict(color=colors['gen'], width=1), fill='tozeroy'))
                                   
