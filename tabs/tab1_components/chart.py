@@ -183,5 +183,43 @@ def render_baseline_chart(df, grid_limit):
             st.plotly_chart(fig_avg_week, use_container_width=True)
             st.write("") 
             
+        # ==========================================
+        # 4. DAILY ENERGY CONSUMPTION CHART
+        # ==========================================
+        st.write("### 🔋 Daily Energy Consumption (kWh per Day)")
+        st.info("Displays the total energy consumption (kWh) for each day of the year.")
+        
+        # Calculate dynamic interval resolution factor
+        if len(df) > 1:
+            delta_min = (df['timestamp'].iloc[1] - df['timestamp'].iloc[0]).total_seconds() / 60.0
+            if pd.isna(delta_min) or delta_min <= 0:
+                delta_min = 15.0
+        else:
+            delta_min = 15.0
+        hour_fraction = delta_min / 60.0
+        
+        df_daily = df.copy()
+        df_daily['date'] = df_daily['timestamp'].dt.date
+        daily_df = df_daily.groupby('date')['consumption_kw'].sum().reset_index()
+        daily_df['daily_energy_kwh'] = daily_df['consumption_kw'] * hour_fraction
+        
+        fig_daily = go.Figure()
+        fig_daily.add_trace(go.Bar(
+            x=daily_df['date'],
+            y=daily_df['daily_energy_kwh'],
+            name='Daily Energy (kWh)',
+            marker_color='#1f77b4'
+        ))
+        
+        fig_daily.update_layout(
+            title="Daily Energy Consumption over the Year",
+            xaxis_title="Date",
+            yaxis_title="Energy (kWh)",
+            margin=dict(l=0, r=0, t=40, b=0),
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_daily, use_container_width=True)
+        st.write("")
+            
     else:
         st.info("No profile data available to display.")

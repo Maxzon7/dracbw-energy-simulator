@@ -32,10 +32,13 @@ def render_performance_matrix(results: pd.DataFrame, baseline_df: pd.DataFrame, 
         st.write("**Autarky & Yield**")
         st.metric("Degree of Autarky", f"{autarky_pct:.1f} %")
         
-        if current_mode in ["Solar PV Only", "Combined"]:
+        has_solar = 'solar_gen_kw' in results.columns and results['solar_gen_kw'].sum() > 0
+        has_battery = 'battery_action_kw' in results.columns and (results['battery_action_kw'] != 0.0).any()
+
+        if has_solar:
             total_solar_kwh = results['solar_gen_kw'].sum() / (60 / res)
             
-            if current_mode == "⚙️ Combined":
+            if has_battery:
                 if project_metadata.get('strict_zero_export', False):
                     curtailed_kwh = results['final_grid_load_kw'].clip(upper=0.0).abs().sum() / (60 / res)
                 else:
@@ -63,7 +66,7 @@ def render_performance_matrix(results: pd.DataFrame, baseline_df: pd.DataFrame, 
         st.write("**Hardware & Assets**")
         min_reqs = {"min_power_kw": 0, "true_min_capacity_kwh": 0}
         
-        if current_mode in ["Battery (BESS) Only", "Combined"]:
+        if has_battery:
             min_reqs = get_exact_minimum_requirements(baseline_df, grid_limit, res)
             throughput_kwh = results['battery_action_kw'].abs().sum() / (60 / res)
             b_cap = current_params.get('battery', current_params).get('b_cap', 0) if isinstance(current_params, dict) else 0

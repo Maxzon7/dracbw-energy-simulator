@@ -44,25 +44,62 @@ def render_tab2_scenarios():
     with col_input:
         st.write("### 2. Configure System Technology")
         active_mode = st.session_state.get('active_sim_mode', "Battery (BESS) Only")
-        valid_modes = ["Solar PV Only", "Battery (BESS) Only", "Generator Only", "Grid Upgrade Only", "Combined (All)"]
-        scenario_mode = st.radio("Configuration:", valid_modes, index=valid_modes.index(active_mode if active_mode in valid_modes else "Battery (BESS) Only"))
+        
+        # Parse active_mode state to set checkbox defaults
+        if isinstance(active_mode, str):
+            default_solar = "Solar" in active_mode or "Combined" in active_mode or active_mode == "All"
+            default_battery = "Battery" in active_mode or "BESS" in active_mode or "Combined" in active_mode or active_mode == "All"
+            default_generator = "Generator" in active_mode or "Combined" in active_mode or active_mode == "All"
+            default_grid = "Grid" in active_mode or "Combined" in active_mode or active_mode == "All"
+        elif isinstance(active_mode, dict):
+            default_solar = active_mode.get('solar', False)
+            default_battery = active_mode.get('battery', False)
+            default_generator = active_mode.get('generator', False)
+            default_grid = active_mode.get('grid', False)
+        else:
+            default_solar, default_battery, default_generator, default_grid = False, True, False, False
+
+        # Independent Checkboxes for Dynamic Combinations
+        enable_solar = st.checkbox("☀️ Integrate Solar PV", value=default_solar)
+        enable_battery = st.checkbox("🔋 Integrate Battery (BESS)", value=default_battery)
+        enable_generator = st.checkbox("🛢️ Integrate Backup Generator", value=default_generator)
+        enable_grid = st.checkbox("⚡ Grid Capacity Upgrade", value=default_grid)
+
+        # Build dynamic scenario mode label
+        active_mode_list = []
+        if enable_solar: active_mode_list.append("Solar")
+        if enable_battery: active_mode_list.append("BESS")
+        if enable_generator: active_mode_list.append("Generator")
+        if enable_grid: active_mode_list.append("Grid Upgrade")
+        
+        scenario_mode = " + ".join(active_mode_list) if active_mode_list else "None"
+        active_sim_mode_dict = {
+            'solar': enable_solar,
+            'battery': enable_battery,
+            'generator': enable_generator,
+            'grid': enable_grid
+        }
 
         with st.form("scenario_tech_form"):
             hw_draft = st.session_state.get('active_sim_params', {})
             params = {}
             
-            if scenario_mode == "Solar PV Only":
-                with st.expander("Configure Solar PV", True): params = render_solar_ui(selected_base_name)
-            elif scenario_mode == "Battery (BESS) Only":
-                with st.expander("Configure BESS", True): params = render_battery_ui(selected_base_name, grid_limit, hw_draft)
-            elif scenario_mode == "Generator Only":
-                with st.expander("Configure Generator", True): params = render_generator_ui(selected_base_name)
-            elif scenario_mode == "Grid Upgrade Only":
-                with st.expander("Configure Grid", True): params = render_grid_upgrade_ui(selected_base_name)
-            else:
-                with st.expander("Solar PV", False): params['solar'] = render_solar_ui(f"{selected_base_name}_c_sol")
-                with st.expander("BESS", False): params['battery'] = render_battery_ui(f"{selected_base_name}_c_bat", grid_limit, hw_draft.get('battery', hw_draft))
-                with st.expander("Generator", False): params['generator'] = render_generator_ui(f"{selected_base_name}_c_gen")
+            if enable_solar:
+                solar_draft = hw_draft.get('solar', hw_draft) if isinstance(hw_draft, dict) else {}
+                with st.expander("Configure Solar PV", True): 
+                    params['solar'] = render_solar_ui(selected_base_name + "_sol")
+            if enable_battery:
+                battery_draft = hw_draft.get('battery', hw_draft) if isinstance(hw_draft, dict) else {}
+                with st.expander("Configure BESS (Battery)", True): 
+                    params['battery'] = render_battery_ui(selected_base_name + "_bat", grid_limit, battery_draft)
+            if enable_generator:
+                generator_draft = hw_draft.get('generator', hw_draft) if isinstance(hw_draft, dict) else {}
+                with st.expander("Configure Generator", True): 
+                    params['generator'] = render_generator_ui(selected_base_name + "_gen")
+            if enable_grid:
+                grid_draft = hw_draft.get('grid', hw_draft) if isinstance(hw_draft, dict) else {}
+                with st.expander("Configure Grid Upgrade", True): 
+                    params['grid'] = render_grid_upgrade_ui(selected_base_name + "_grid")
 
             with st.expander("Chart Colors", expanded=False):
                 colors = {
@@ -78,31 +115,54 @@ def render_tab2_scenarios():
         # Decide whether to run calculations or use cached values
         should_calculate = run_sim or \
                            st.session_state.get('last_calculated_project') != selected_base_name or \
-                           st.session_state.get('active_sim_mode') != scenario_mode or \
+                           st.session_state.get('active_sim_mode') != active_sim_mode_dict or \
                            'active_sim_results' not in st.session_state
 
         if should_calculate:
             st.session_state['chart_colors'] = colors
             
             clean_base_df = baseline_df[['timestamp', 'consumption_kw']].copy() if 'timestamp' in baseline_df.columns else baseline_df.copy()
+            calculated_df = clean_base_df.copy()
+            calculated_df['solar_gen_kw'] = 0.0
+            calculated_df['battery_action_kw'] = 0.0
+            calculated_df['battery_soc_kwh'] = 0.0
+            calculated_df['generator_action_kw'] = 0.0
+            calculated_df['generator_fuel_l'] = 0.0
+            calculated_df['final_grid_load_kw'] = calculated_df['consumption_kw']
             
-            if scenario_mode == "Solar PV Only":
-                calculated_df = generate_solar_profile(clean_base_df, project_metadata, params)
-                calculated_df['final_grid_load_kw'] = calculated_df['net_load_kw']
-            elif scenario_mode == "Battery (BESS) Only":
-                calculated_df = run_isolated_scenario(clean_base_df, "Battery (Peak Shaving)", params, grid_limit, res)
-            elif scenario_mode == "Generator Only":
-                calculated_df = simulate_generator_logic(clean_base_df, grid_limit, params, res)
-            elif scenario_mode == "Grid Upgrade Only":
-                calculated_df = clean_base_df.copy()
-                calculated_df['final_grid_load_kw'] = calculated_df['consumption_kw']
+            # Step 1: Grid Upgrade (resolves the target grid limit used in downstream simulations)
+            sim_grid_limit = grid_limit
+            if enable_grid and 'grid' in params:
+                sim_grid_limit = params['grid'].get('new_grid_limit_kw', grid_limit)
+                
+            # Step 2: Solar PV Integration
+            if enable_solar and 'solar' in params:
+                calculated_df = generate_solar_profile(calculated_df, project_metadata, params['solar'])
             else:
-                df_1 = generate_solar_profile(clean_base_df, project_metadata, params.get('solar', {}))
-                df_2 = simulate_battery_logic(df_1, grid_limit, params.get('battery', {}), res)
-                calculated_df = simulate_generator_logic(df_2, grid_limit, params.get('generator', {}), res)
+                calculated_df['solar_gen_kw'] = 0.0
+                calculated_df['net_load_kw'] = calculated_df['consumption_kw']
+                calculated_df['grid_feed_in_kw'] = 0.0
+                
+            # Step 3: Battery (BESS) Simulation
+            if enable_battery and 'battery' in params:
+                calculated_df = simulate_battery_logic(calculated_df, sim_grid_limit, params['battery'], res)
+            else:
+                calculated_df['battery_action_kw'] = 0.0
+                calculated_df['battery_soc_kwh'] = 0.0
+                calculated_df['final_grid_load_kw'] = calculated_df['net_load_kw']
+                
+            # Step 4: Backup Generator Simulation
+            if enable_generator and 'generator' in params:
+                calculated_df = simulate_generator_logic(calculated_df, sim_grid_limit, params['generator'], res)
+            else:
+                calculated_df['generator_action_kw'] = 0.0
+                calculated_df['generator_fuel_l'] = 0.0
+                
+            if 'final_grid_load_kw' not in calculated_df.columns:
+                calculated_df['final_grid_load_kw'] = calculated_df['consumption_kw']
 
             st.session_state['active_sim_results'] = calculated_df
-            st.session_state['active_sim_mode'] = scenario_mode
+            st.session_state['active_sim_mode'] = active_sim_mode_dict
             st.session_state['active_sim_params'] = params
             st.session_state['last_calculated_project'] = selected_base_name
         else:
@@ -118,30 +178,24 @@ def render_tab2_scenarios():
         if financials_active:
             with st.container():
                 col1, col2 = st.columns(2)
-                p = params
+                
+                # Sum CAPEX and OPEX dynamically from all active sub-components
                 default_capex = 0.0
-                if scenario_mode == "Battery (BESS) Only": 
-                    default_capex = float(p.get('capacity_kwh', 0.0) * 400)
-                elif scenario_mode == "Solar PV Only": 
-                    default_capex = float(p.get('system_size_kwp', 0.0) * 800)
-                elif scenario_mode == "Combined (All)": 
-                    default_capex = float(p.get('battery', {}).get('capacity_kwh', 0.0) * 400) + float(p.get('solar', {}).get('system_size_kwp', 0.0) * 800)
+                if enable_solar and 'solar' in params:
+                    default_capex += float(params['solar'].get('total_capex', 0.0))
+                if enable_battery and 'battery' in params:
+                    default_capex += float(params['battery'].get('total_capex', 0.0))
+                if enable_grid and 'grid' in params:
+                    default_capex += float(params['grid'].get('upgrade_capex', 0.0))
 
                 capex_input = col1.number_input("Purchase Price (€) [CAPEX]", value=default_capex, step=1000.0)
                 opex_input = col2.number_input("Maintenance/Year (€) [OPEX]", value=float(default_capex * 0.02), step=100.0)
                 financial_module = FinancialParams(capex=capex_input, opex_yearly=opex_input, lifespan_years=15)
 
         if st.button("Save Variant", type="primary", use_container_width=True):
-            b_kwh, b_kw, s_kwp = 0.0, 0.0, 0.0
-            if scenario_mode == "Battery (BESS) Only":
-                b_kwh = params.get('capacity_kwh', 0.0)
-                b_kw = params.get('max_kw', 0.0)
-            elif scenario_mode == "Solar PV Only":
-                s_kwp = params.get('system_size_kwp', 0.0)
-            elif scenario_mode == "Combined (All)":
-                b_kwh = params.get('battery', {}).get('capacity_kwh', 0.0)
-                b_kw = params.get('battery', {}).get('max_kw', 0.0)
-                s_kwp = params.get('solar', {}).get('system_size_kwp', 0.0)
+            b_kwh = params.get('battery', {}).get('b_cap', 0.0) if enable_battery and 'battery' in params else 0.0
+            b_kw = params.get('battery', {}).get('b_pwr', 0.0) if enable_battery and 'battery' in params else 0.0
+            s_kwp = params.get('solar', {}).get('installed_kwp', 0.0) if enable_solar and 'solar' in params else 0.0
 
             new_sub = SubScenario(
                 name=scenario_name_input,
