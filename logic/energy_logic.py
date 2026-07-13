@@ -151,26 +151,45 @@ def simulate_battery_logic(df: pd.DataFrame, grid_limit: float, b_params: dict, 
             current_soc_kwh -= (final_discharge_kw / res_factor) / eff_factor
             
         else:
-            is_inside_window = False
-            if start_hour <= end_hour:
-                is_inside_window = (start_hour <= current_hour <= end_hour)
-            else: 
-                is_inside_window = (current_hour >= start_hour or current_hour <= end_hour)
-                
-            if is_inside_window and current_soc_kwh < b_cap:
-                empty_space_kwh = b_cap - current_soc_kwh
-                max_charge_allowed_by_cells_kw = (empty_space_kwh * res_factor) / eff_factor
-                max_charging_speed_kw = min(b_pwr, charge_pwr_limit, max_charge_allowed_by_cells_kw)
-                
-                if green_charging:
-                    solar_surplus_kw = max(0.0, solar_yield - row['consumption_kw'])
-                    final_charge_kw = min(max_charging_speed_kw, solar_surplus_kw)
+            # Charging phase
+            # Source A: Solar surplus charging (allowed 24/7)
+            solar_charge_kw = 0.0
+            cons_kw = row['consumption_kw'] if 'consumption_kw' in row else current_load
+            
+            if solar_gen_col:
+                solar_surplus_kw = max(0.0, solar_yield - cons_kw)
+                if solar_surplus_kw > 0.0 and current_soc_kwh < b_cap:
+                    empty_space_kwh = b_cap - current_soc_kwh
+                    max_charge_allowed_by_cells_kw = (empty_space_kwh * res_factor) / eff_factor
+                    solar_charge_kw = min(solar_surplus_kw, b_pwr, charge_pwr_limit, max_charge_allowed_by_cells_kw)
+                    
+                    current_soc_kwh += (solar_charge_kw / res_factor) * eff_factor
+                    battery_action_kw = -solar_charge_kw
+                    
+            # Source B: Grid charging (only inside window and if green_charging is False)
+            grid_charge_kw = 0.0
+            if not green_charging and current_soc_kwh < b_cap:
+                is_inside_window = False
+                if start_hour <= end_hour:
+                    is_inside_window = (start_hour <= current_hour <= end_hour)
                 else:
-                    grid_headroom_kw = max(0.0, shaving_threshold - current_load)
-                    final_charge_kw = min(max_charging_speed_kw, grid_headroom_kw)
-                
-                battery_action_kw = -final_charge_kw
-                current_soc_kwh += (final_charge_kw / res_factor) * eff_factor
+                    is_inside_window = (current_hour >= start_hour or current_hour <= end_hour)
+                    
+                if is_inside_window:
+                    empty_space_kwh = b_cap - current_soc_kwh
+                    max_charge_allowed_by_cells_kw = (empty_space_kwh * res_factor) / eff_factor
+                    
+                    # Remaining net load on grid after solar charging
+                    grid_load_before_grid_charge = current_load - battery_action_kw
+                    grid_headroom_kw = max(0.0, shaving_threshold - grid_load_before_grid_charge)
+                    
+                    total_charge_limit_kw = min(b_pwr, charge_pwr_limit)
+                    remaining_charge_limit_kw = max(0.0, total_charge_limit_kw - solar_charge_kw)
+                    
+                    grid_charge_kw = min(grid_headroom_kw, remaining_charge_limit_kw, max_charge_allowed_by_cells_kw)
+                    
+                    current_soc_kwh += (grid_charge_kw / res_factor) * eff_factor
+                    battery_action_kw -= grid_charge_kw
 
         soc_history.append(current_soc_kwh)
         action_history.append(battery_action_kw)
