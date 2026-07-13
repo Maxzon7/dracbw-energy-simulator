@@ -43,10 +43,8 @@ def render_main_menu():
     with col3:
         st.warning("Load a predefined showcase scenario for demonstration.")
         if st.button("🧪 Try Demo Mode", use_container_width=True):
-            st.session_state['project_hub']["Demo_Facility"] = {'scenario_vault': {}, 'active_scenario_name': None}
-            st.session_state['active_project_name'] = "Demo_Facility"
-            st.session_state['scenario_vault'] = {}
-            st.session_state['active_scenario_name'] = None
+            st.session_state['is_demo_mode'] = True
+            st.session_state['active_project_name'] = "Demo Mode"
             st.rerun()
 
     st.markdown("<br><br>", unsafe_allow_html=True)

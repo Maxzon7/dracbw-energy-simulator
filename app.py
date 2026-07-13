@@ -52,6 +52,15 @@ def main():
     # --- ROUTING (The Switch) ---
     if st.session_state['active_project_name'] is None:
         render_main_menu() # Calls the outsourced lobby
+    elif st.session_state.get('is_demo_mode', False):
+        st.sidebar.markdown("---")
+        if st.sidebar.button("🚪 Close Demo Mode", type="primary", use_container_width=True):
+            st.session_state['active_project_name'] = None
+            st.session_state['is_demo_mode'] = False
+            st.rerun()
+        
+        from demo_mode.demo_main import render_demo_mode
+        render_demo_mode()
     else:
         st.sidebar.markdown("---")
         st.session_state['enable_financials'] = st.sidebar.toggle("💰 Enable Financial Evaluation", value=st.session_state['enable_financials'])

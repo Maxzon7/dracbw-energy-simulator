@@ -73,6 +73,78 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
             "params": params
         }
         
+        # --- TRANSACTIONAL DATA BRIDGE ---
+        from classes.models import BaseScenario, SubScenario, Tariff, FinancialParams
+        from logic.storage_manager import get_base_scenario, create_empty_base_scenario, save_profile_to_base, add_sub_scenario
+        
+        active_project = st.session_state.get('active_project_name')
+        
+        if active_project:
+            if save_type == "Haupt-Szenario (Basis)":
+                # Ensure the base scenario exists in storage
+                base_obj = get_base_scenario(scenario_name)
+                if not base_obj:
+                    base_obj = create_empty_base_scenario(scenario_name)
+                
+                # Update its profile and tariff
+                base_obj.original_profile = df
+                base_obj.base_tariff = Tariff(
+                    name=fin_meta.get('tariff_mode', 'Custom') if fin_meta.get('tariff_mode') else 'Custom',
+                    contracted_capacity_kw=grid_limit,
+                    fixed_costs_per_year=float(fin_meta.get('fixed_annual_connection_fee', 0.0) or 0.0) + float(fin_meta.get('fixed_annual_transport_fee', 0.0) or 0.0),
+                    price_per_kw_peak=float(fin_meta.get('peak_capacity_fee_per_kw_month', 0.0) or 0.0),
+                    price_per_kwh=float(fin_meta.get('energy_price_normal_per_kwh', 0.0) or 0.0),
+                    is_custom=True
+                )
+                # Store metadata
+                base_obj.metadata = params
+                base_obj.metadata['financial_metadata'] = fin_meta
+                
+            elif save_type == "Sub-Szenario (Variante)" and parent_scen:
+                # Retrieve the parent base scenario
+                parent_obj = get_base_scenario(parent_scen)
+                if parent_obj:
+                    # Construct financial parameters if available
+                    fin_params = None
+                    if fin_meta:
+                        fin_params = FinancialParams(
+                            capex=float(fin_meta.get('baseline_grid_capex', 0.0) or 0.0),
+                            opex_yearly=float(fin_meta.get('fixed_annual_connection_fee', 0.0) or 0.0) + float(fin_meta.get('fixed_annual_transport_fee', 0.0) or 0.0),
+                            lifespan_years=15,
+                            inflation_rate=float(fin_meta.get('inflation', 3.0) or 3.0) / 100.0,
+                            energy_price_growth=0.04
+                        )
+                    
+                    # Create custom tariff for the sub scenario if it differs
+                    sub_tariff = Tariff(
+                        name=fin_meta.get('tariff_mode', 'Custom') if fin_meta.get('tariff_mode') else 'Custom',
+                        contracted_capacity_kw=grid_limit,
+                        fixed_costs_per_year=float(fin_meta.get('fixed_annual_connection_fee', 0.0) or 0.0) + float(fin_meta.get('fixed_annual_transport_fee', 0.0) or 0.0),
+                        price_per_kw_peak=float(fin_meta.get('peak_capacity_fee_per_kw_month', 0.0) or 0.0),
+                        price_per_kwh=float(fin_meta.get('energy_price_normal_per_kwh', 0.0) or 0.0),
+                        is_custom=True
+                    )
+                    
+                    # Extract battery/solar configs from params
+                    b_kwh = float(params.get('battery_kwh', params.get('capacity_kwh', 0.0)))
+                    b_kw = float(params.get('battery_kw', params.get('max_kw', 0.0)))
+                    s_kwp = float(params.get('solar_kwp', params.get('system_size_kwp', 0.0)))
+                    
+                    # Construct SubScenario
+                    new_sub = SubScenario(
+                        name=scenario_name,
+                        battery_kwh=b_kwh,
+                        battery_kw=b_kw,
+                        solar_kwp=s_kwp,
+                        custom_tariff=sub_tariff,
+                        financials=fin_params,
+                        simulated_profile=df
+                    )
+                    
+                    # Add to parent (remove duplicate first to handle overwrites cleanly)
+                    parent_obj.sub_scenarios = [s for s in parent_obj.sub_scenarios if s.name != scenario_name]
+                    parent_obj.add_sub_scenario(new_sub)
+        
         if data_source == "CSV":
             st.session_state[f"csv_mapping_ready_{active_scenario}"] = False
             

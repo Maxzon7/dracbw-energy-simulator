@@ -14,6 +14,7 @@ from logic.storage_manager import (
 # UI Components imports
 from tabs.tab1_components.upload import render_upload_ui
 from tabs.tab1_components.synthetic_load import render_synthetic_load_ui
+from tabs.tab1_components.manual import render_manual_builder
 from tabs.tab1_components.project_params import render_project_params
 from tabs.tab1_components.financial_ui import render_preset_selector, render_financial_inputs
 from tabs.tab1_components.chart import render_baseline_chart
@@ -59,11 +60,17 @@ def render_tab1_baseline():
     st.write("### ⚙️ 1. Grid Tariff Autofill")
     preset_label, preset_data = render_preset_selector()
     
+    if 'current_financial_metadata' not in st.session_state:
+        st.session_state['current_financial_metadata'] = {}
+    if preset_data:
+        st.session_state['current_financial_metadata'].update(preset_data)
+        st.session_state['current_financial_metadata']['tariff_mode'] = preset_label
+    
     st.divider()
     
     # --- 2. DATENQUELLE ---
     st.write("### 📂 2. Data Source Configuration")
-    data_source = st.radio("Select Data Source:", ["Upload CSV", "Generate Synthetic Load"], horizontal=True)
+    data_source = st.radio("Select Data Source:", ["Upload CSV", "Generate Synthetic Load", "Advanced Manual Generator"], horizontal=True)
     
     # Platzhalter für UI-Kompatibilität
     saved_params = {} 
@@ -72,56 +79,64 @@ def render_tab1_baseline():
     
     if data_source == "Upload CSV":
         uploaded_file, filtered_df, upload_params = render_upload_ui(active_baseline_name, saved_params)
-    else:
+    elif data_source == "Generate Synthetic Load":
         syn_params = render_synthetic_load_ui(active_baseline_name)
+    else:
+        render_manual_builder(active_baseline_name, is_edit_mode=False, base_p=saved_params)
 
-    st.divider()
+    # Only show baseline_form for non-manual data sources, since manual builder handles its own saving
+    if data_source != "Advanced Manual Generator":
+        st.divider()
 
-    # --- 3. PROJECT META & FINANZEN ---
-    st.write("### 📊 3. Project Meta & Financial Configuration")
-    
-    with st.form("baseline_form"):
-        proj_params = render_project_params(saved_params, active_baseline_name)
+        # --- 3. PROJECT META & FINANZEN ---
+        st.write("### 📊 3. Project Meta & Financial Configuration")
         
-        st.divider()
-        working_fin = saved_params.get('financial_metadata', {}).copy()
-        if preset_data:
-            working_fin.update(preset_data)
-            working_fin['tariff_mode'] = preset_label
+        with st.form("baseline_form"):
+            proj_params = render_project_params(saved_params, active_baseline_name)
             
-        fin_params = render_financial_inputs(working_fin)
-        
-        st.divider()
-        submit_btn = st.form_submit_button("💾 Process & Save Baseline Profile", type="primary", use_container_width=True)
-        
-    # --- 4. SAVE EXECUTION ---
-    if submit_btn:
-        with st.spinner("Processing energy profile & validating limits..."):
-            df, is_valid, msg = validate_and_process_data(
-                data_source, uploaded_file, upload_params, syn_params, proj_params
-            )
+            st.divider()
+            working_fin = saved_params.get('financial_metadata', {}).copy()
+            if preset_data:
+                working_fin.update(preset_data)
+                working_fin['tariff_mode'] = preset_label
+                
+            fin_params = render_financial_inputs(working_fin)
             
-            if data_source == "Upload CSV" and filtered_df is not None and not filtered_df.empty:
-                df = filtered_df
-                is_valid = True
+            st.divider()
+            submit_btn = st.form_submit_button("💾 Process & Save Baseline Profile", type="primary", use_container_width=True)
             
-            if is_valid and df is not None:
-                limit_kw = proj_params.get('grid_limit_kw', 120.0)
+        if submit_btn:
+            st.session_state['current_financial_metadata'] = fin_params
+
+        # --- 4. SAVE EXECUTION ---
+        if submit_btn:
+            with st.spinner("Processing energy profile & validating limits..."):
+                df, is_valid, msg = validate_and_process_data(
+                    data_source, uploaded_file, upload_params, syn_params, proj_params
+                )
                 
-                # ==========================================
-                # NEU: Wir speichern das Profil DIREKT in der Klasse
-                # ==========================================
-                save_profile_to_base(active_baseline_name, df, limit_kw)
+                if data_source == "Upload CSV" and filtered_df is not None and not filtered_df.empty:
+                    df = filtered_df
+                    is_valid = True
                 
-                # Wir aktualisieren auch den an die Klasse angehängten Tarif
-                if active_scenario_obj:
-                    active_scenario_obj.base_tariff.name = preset_label if preset_label else "Custom"
-                    active_scenario_obj.base_tariff.contracted_capacity_kw = limit_kw
-                
-                st.success(f"✅ Baseline '{active_baseline_name}' successfully saved!")
-                st.rerun() 
-            else:
-                st.error(f"Validation failed: {msg}")
+                if is_valid and df is not None:
+                    limit_kw = proj_params.get('grid_limit_kw', 120.0)
+                    
+                    # ==========================================
+                    # NEU: Wir speichern das Profil DIREKT in der Klasse
+                    # ==========================================
+                    save_profile_to_base(active_baseline_name, df, limit_kw)
+                    
+                    # Wir aktualisieren auch den an die Klasse angehängten Tarif
+                    if active_scenario_obj:
+                        active_scenario_obj.base_tariff.name = preset_label if preset_label else "Custom"
+                        active_scenario_obj.base_tariff.contracted_capacity_kw = limit_kw
+                        active_scenario_obj.metadata['financial_metadata'] = fin_params
+                    
+                    st.success(f"✅ Baseline '{active_baseline_name}' successfully saved!")
+                    st.rerun() 
+                else:
+                    st.error(f"Validation failed: {msg}")
 
     # --- 5. CHART RENDERING ---
     if active_scenario_obj and active_scenario_obj.original_profile is not None:

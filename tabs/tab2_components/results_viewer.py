@@ -71,6 +71,46 @@ def render_results_and_charts(results, baseline_df, grid_limit, res, current_mod
                 except Exception as pdf_error:
                     st.error(f"Error compiling document: {pdf_error}")
 
+    # --- CSV EXPORT ---
+    st.divider()
+    with st.expander("Export Simulation Results as CSV", expanded=False):
+        st.write("Customize column names for the CSV export:")
+        
+        col_name_inputs = {}
+        
+        # Check active columns and provide text inputs
+        if "timestamp" in results.columns:
+            col_name_inputs["timestamp"] = st.text_input("Timestamp Column Name", value="Timestamp", key=f"csv_col_time_{selected_name}")
+        if "consumption_kw" in results.columns:
+            col_name_inputs["consumption_kw"] = st.text_input("Original Load Column Name", value="Original Load", key=f"csv_col_cons_{selected_name}")
+        if "final_grid_load_kw" in results.columns:
+            col_name_inputs["final_grid_load_kw"] = st.text_input("Optimized Grid Demand Column Name", value="Optimized Grid Demand", key=f"csv_col_opt_{selected_name}")
+        if "battery_action_kw" in results.columns:
+            col_name_inputs["battery_action_kw"] = st.text_input("Battery Action Column Name", value="Battery Action", key=f"csv_col_bat_act_{selected_name}")
+        if "battery_soc_kwh" in results.columns:
+            col_name_inputs["battery_soc_kwh"] = st.text_input("Battery State of Charge Column Name", value="Battery State of Charge", key=f"csv_col_bat_soc_{selected_name}")
+        if "solar_gen_kw" in results.columns:
+            col_name_inputs["solar_gen_kw"] = st.text_input("Solar Yield Column Name", value="Solar Yield", key=f"csv_col_sol_gen_{selected_name}")
+        if "generator_action_kw" in results.columns:
+            col_name_inputs["generator_action_kw"] = st.text_input("Generator Output Column Name", value="Generator Output", key=f"csv_col_gen_act_{selected_name}")
+        if "generator_fuel_l" in results.columns:
+            col_name_inputs["generator_fuel_l"] = st.text_input("Generator Fuel Column Name", value="Generator Fuel Consumption", key=f"csv_col_gen_fuel_{selected_name}")
+
+        cols_to_export = [col for col in col_name_inputs.keys() if col in results.columns]
+        if cols_to_export:
+            export_df = results[cols_to_export].copy()
+            export_df.rename(columns=col_name_inputs, inplace=True)
+            csv_data = export_df.to_csv(index=False).encode('utf-8')
+            
+            st.download_button(
+                label="Download Simulation Results (CSV)",
+                data=csv_data,
+                file_name=f"{selected_name}_simulation_export.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key=f"csv_dl_btn_{selected_name}"
+            )
+
 def render_scenario_clone_ui(vault, selected_name, is_draft):
     """Handles the cloning of scenarios into the vault."""
     st.divider()
