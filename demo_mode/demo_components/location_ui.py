@@ -14,9 +14,13 @@ def render_demo_location_ui() -> dict:
 
     countries = ["Netherlands 🇳🇱", "Germany 🇩🇪", "Argentina 🇦🇷", "Other"]
     
-    # Initialize country session state if not existing
+    # Initialize country and coordinates session states if not existing
     if "demo_country" not in st.session_state:
         st.session_state["demo_country"] = "Netherlands 🇳🇱"
+    if "demo_lat_input" not in st.session_state:
+        st.session_state["demo_lat_input"] = 52.3676
+    if "demo_lon_input" not in st.session_state:
+        st.session_state["demo_lon_input"] = 4.9041
         
     country = st.selectbox(
         "Select Country:", 
@@ -34,14 +38,8 @@ def render_demo_location_ui() -> dict:
             "Other":          {"lat": 0.0, "lon": 0.0}
         }
         defaults = geo_defaults.get(country, geo_defaults["Other"])
-        st.session_state["demo_lat"] = defaults["lat"]
-        st.session_state["demo_lon"] = defaults["lon"]
-
-    # Smart defaults fallback
-    if "demo_lat" not in st.session_state:
-        st.session_state["demo_lat"] = 52.3676
-    if "demo_lon" not in st.session_state:
-        st.session_state["demo_lon"] = 4.9041
+        st.session_state["demo_lat_input"] = defaults["lat"]
+        st.session_state["demo_lon_input"] = defaults["lon"]
 
     # Address search bar
     search_query = st.text_input(
@@ -56,8 +54,8 @@ def render_demo_location_ui() -> dict:
             url = f"https://nominatim.openstreetmap.org/search?q={search_query}&format=json&limit=1"
             response = requests.get(url, headers=headers).json()
             if response:
-                st.session_state["demo_lat"] = float(response[0]['lat'])
-                st.session_state["demo_lon"] = float(response[0]['lon'])
+                st.session_state["demo_lat_input"] = float(response[0]['lat'])
+                st.session_state["demo_lon_input"] = float(response[0]['lon'])
                 st.success(f"📍 Found: {response[0]['display_name']}")
             else:
                 st.warning("Address not found. Please try a different query.")
@@ -68,29 +66,23 @@ def render_demo_location_ui() -> dict:
     col_lat, col_lon = st.columns(2)
     latitude = col_lat.number_input(
         "Latitude (Breitengrad)", 
-        value=st.session_state["demo_lat"], 
         format="%.6f",
         key="demo_lat_input"
     )
     longitude = col_lon.number_input(
         "Longitude (Längengrad)", 
-        value=st.session_state["demo_lon"], 
         format="%.6f",
         key="demo_lon_input"
     )
-    
-    # Keep session states synced with numeric inputs
-    st.session_state["demo_lat"] = latitude
-    st.session_state["demo_lon"] = longitude
 
     # Interactive map toggle
     use_map = st.toggle("🗺️ Show Map", value=True, key="demo_map_toggle")
     
     if use_map:
         try:
-            m = folium.Map(location=[st.session_state["demo_lat"], st.session_state["demo_lon"]], zoom_start=12)
+            m = folium.Map(location=[latitude, longitude], zoom_start=12)
             folium.Marker(
-                [st.session_state["demo_lat"], st.session_state["demo_lon"]], 
+                [latitude, longitude], 
                 popup="Selected Location",
                 icon=folium.Icon(color="red", icon="info-sign")
             ).add_to(m)
