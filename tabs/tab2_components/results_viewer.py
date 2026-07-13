@@ -50,21 +50,64 @@ def render_results_and_charts(results, baseline_df, grid_limit, res, current_mod
         else:
             st.success("🌱 No generator fuel required! The system handled all peaks.")
 
-    # --- CHART 2: Battery specific charts ---
-    if has_battery:
+    # --- CHART 2: Sub-charts (Dynamic responsive layout) ---
+    if has_battery and has_solar:
+        import numpy as np
         c_left, c_right = st.columns(2)
         with c_left:
-            st.write("**Battery Action (kW)**")
-            fig_act = go.Figure()
-            fig_act.add_trace(go.Bar(x=results['timestamp'], y=results['battery_action_kw'], marker_color=colors['act']))
-            fig_act.update_layout(height=230, margin=dict(t=10, b=10))
-            st.plotly_chart(fig_act, use_container_width=True)
+            st.write("**Solar Energy Utilization (kW)**")
+            solar_gen = results['solar_gen_kw']
+            cons = results['consumption_kw']
+            bat_action = results['battery_action_kw']
+            
+            solar_self_cons = np.minimum(solar_gen, cons)
+            
+            # Solar charging battery (occurs when BESS is charging, i.e., action < 0)
+            bat_charge = np.where(bat_action < 0, np.abs(bat_action), 0.0)
+            solar_surplus = np.maximum(0.0, solar_gen - cons)
+            solar_to_bat = np.minimum(solar_surplus, bat_charge)
+            
+            # Remaining solar excess exported or curtailed
+            solar_excess = np.maximum(0.0, solar_gen - solar_self_cons - solar_to_bat)
+            
+            fig_sol_util = go.Figure()
+            fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_self_cons, name="Covering Demand", stackgroup='one', line=dict(width=0.5, color='#4CAF50'), fill='tonexty'))
+            fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_to_bat, name="To Battery", stackgroup='one', line=dict(width=0.5, color='#AB63FA'), fill='tonexty'))
+            fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_excess, name="Excess (Export/Curtail)", stackgroup='one', line=dict(width=0.5, color='#FF9800'), fill='tonexty'))
+            
+            fig_sol_util.update_layout(height=230, margin=dict(t=10, b=10, l=10, r=10), legend=dict(orientation="h", y=1.1))
+            st.plotly_chart(fig_sol_util, use_container_width=True)
+            
         with c_right:
             st.write("**Battery SoC (kWh)**")
             fig_soc = go.Figure()
             fig_soc.add_trace(go.Scattergl(x=results['timestamp'], y=results['battery_soc_kwh'], fill='tozeroy', line=dict(color=colors['soc'])))
-            fig_soc.update_layout(height=230, margin=dict(t=10, b=10))
+            fig_soc.update_layout(height=230, margin=dict(t=10, b=10, l=10, r=10))
             st.plotly_chart(fig_soc, use_container_width=True)
+            
+    elif has_battery:
+        # BESS Only: full-width SoC chart
+        st.write("**Battery SoC (kWh)**")
+        fig_soc = go.Figure()
+        fig_soc.add_trace(go.Scattergl(x=results['timestamp'], y=results['battery_soc_kwh'], fill='tozeroy', line=dict(color=colors['soc'])))
+        fig_soc.update_layout(height=300, margin=dict(t=10, b=10, l=10, r=10))
+        st.plotly_chart(fig_soc, use_container_width=True)
+        
+    elif has_solar:
+        # Solar Only: full-width Solar Utilization chart
+        import numpy as np
+        st.write("**Solar Energy Utilization (kW)**")
+        solar_gen = results['solar_gen_kw']
+        cons = results['consumption_kw']
+        solar_self_cons = np.minimum(solar_gen, cons)
+        solar_excess = np.maximum(0.0, solar_gen - solar_self_cons)
+        
+        fig_sol_util = go.Figure()
+        fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_self_cons, name="Covering Demand", stackgroup='one', line=dict(width=0.5, color='#4CAF50'), fill='tonexty'))
+        fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_excess, name="Excess (Export/Curtail)", stackgroup='one', line=dict(width=0.5, color='#FF9800'), fill='tonexty'))
+        
+        fig_sol_util.update_layout(height=300, margin=dict(t=10, b=10, l=10, r=10), legend=dict(orientation="h", y=1.1))
+        st.plotly_chart(fig_sol_util, use_container_width=True)
 
     peak_orig, min_reqs = render_performance_matrix(results, baseline_df, grid_limit, res, current_mode, current_params, project_metadata)
 
