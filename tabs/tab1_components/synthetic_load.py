@@ -26,6 +26,7 @@ def render_synthetic_load_ui(active_scenario: str) -> dict:
         "noise_percentage": noise_percentage
     }
 
+@st.cache_data
 def synthetic_load(monthly_consumption: float, 
                    days_per_week: int, 
                    hours_per_day: int, 
