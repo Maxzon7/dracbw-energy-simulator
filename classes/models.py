@@ -41,6 +41,7 @@ class SubScenario:
     battery_kwh: float = 0.0
     battery_kw: float = 0.0
     solar_kwp: float = 0.0
+    tech_params: Optional[dict] = None
     
     # Die angehängten Module
     # 'Optional' bedeutet: Es kann ein Tarif drin sein, oder 'None' (dann gilt der vom Parent)

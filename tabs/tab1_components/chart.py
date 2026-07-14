@@ -32,8 +32,8 @@ def create_violation_chart(plot_df, x_col, y_col, grid_limit, title, sub_meters=
                     opacity=0.6
                 ))
     
-    # 3. Grid Limit Horizontal Line & Violation Shading (ONLY if limit > 0)
-    if grid_limit > 0.0:
+    # 3. Grid Limit Horizontal Line & Violation Shading (ONLY if 0 < limit < 99000)
+    if grid_limit > 0.0 and grid_limit < 99000.0:
         fig.add_hline(
             y=grid_limit, 
             line_dash="dash", 

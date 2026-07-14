@@ -29,17 +29,18 @@ def render_results_and_charts(results, baseline_df, grid_limit, res, current_mod
     has_fuel = 'generator_fuel_l' in results.columns and results['generator_fuel_l'].sum() > 0
 
     if has_solar:
-        fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['solar_gen_kw'], name="Solar Yield", line=dict(color='#FFC107', width=1), fill='tozeroy'))
+        fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['solar_gen_kw'], name="Solar Yield", line=dict(color=colors.get('sol', '#FFC107'), width=1), fill='tozeroy'))
     if has_battery:
         battery_discharge = results['battery_action_kw'].clip(lower=0.0)
         fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=battery_discharge, name="Battery Discharge", line=dict(color=colors['act'], width=1), fill='tozeroy'))
         
         battery_charge = results['battery_action_kw'].clip(upper=0.0).abs()
-        fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=battery_charge, name="Battery Charge", line=dict(color='#AB63FA', width=1), fill='tozeroy'))
+        fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=battery_charge, name="Battery Charge", line=dict(color=colors.get('chg', '#AB63FA'), width=1), fill='tozeroy'))
     if has_generator:
         fig_load.add_trace(go.Scattergl(x=results['timestamp'], y=results['generator_action_kw'], name="Generator Output", line=dict(color=colors['gen'], width=1), fill='tozeroy'))
                                   
-    fig_load.add_hline(y=grid_limit, line_dash="dash", line_color="red", annotation_text="Grid Limit")
+    if grid_limit > 0.0 and grid_limit < 99000.0:
+        fig_load.add_hline(y=grid_limit, line_dash="dash", line_color=colors.get('lim', '#FF0000'), annotation_text="Grid Limit")
     fig_load.update_layout(height=400, yaxis_title="kW", margin=dict(t=10, b=10), legend=dict(orientation="h", y=1.1))
     st.plotly_chart(fig_load, use_container_width=True)
 
@@ -71,9 +72,9 @@ def render_results_and_charts(results, baseline_df, grid_limit, res, current_mod
             solar_excess = np.maximum(0.0, solar_gen - solar_self_cons - solar_to_bat)
             
             fig_sol_util = go.Figure()
-            fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_self_cons, name="Covering Demand", stackgroup='one', line=dict(width=0.5, color='#4CAF50'), fill='tonexty'))
-            fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_to_bat, name="To Battery", stackgroup='one', line=dict(width=0.5, color='#AB63FA'), fill='tonexty'))
-            fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_excess, name="Excess (Export/Curtail)", stackgroup='one', line=dict(width=0.5, color='#FF9800'), fill='tonexty'))
+            fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_self_cons, name="Covering Demand", stackgroup='one', line=dict(width=0.5, color=colors.get('sol_self', '#4CAF50')), fill='tonexty'))
+            fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_to_bat, name="To Battery", stackgroup='one', line=dict(width=0.5, color=colors.get('sol_bat', '#AB63FA')), fill='tonexty'))
+            fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_excess, name="Excess (Export/Curtail)", stackgroup='one', line=dict(width=0.5, color=colors.get('sol_exc', '#FF9800')), fill='tonexty'))
             
             fig_sol_util.update_layout(height=230, margin=dict(t=10, b=10, l=10, r=10), legend=dict(orientation="h", y=1.1))
             st.plotly_chart(fig_sol_util, use_container_width=True)
@@ -103,8 +104,8 @@ def render_results_and_charts(results, baseline_df, grid_limit, res, current_mod
         solar_excess = np.maximum(0.0, solar_gen - solar_self_cons)
         
         fig_sol_util = go.Figure()
-        fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_self_cons, name="Covering Demand", stackgroup='one', line=dict(width=0.5, color='#4CAF50'), fill='tonexty'))
-        fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_excess, name="Excess (Export/Curtail)", stackgroup='one', line=dict(width=0.5, color='#FF9800'), fill='tonexty'))
+        fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_self_cons, name="Covering Demand", stackgroup='one', line=dict(width=0.5, color=colors.get('sol_self', '#4CAF50')), fill='tonexty'))
+        fig_sol_util.add_trace(go.Scatter(x=results['timestamp'], y=solar_excess, name="Excess (Export/Curtail)", stackgroup='one', line=dict(width=0.5, color=colors.get('sol_exc', '#FF9800')), fill='tonexty'))
         
         fig_sol_util.update_layout(height=300, margin=dict(t=10, b=10, l=10, r=10), legend=dict(orientation="h", y=1.1))
         st.plotly_chart(fig_sol_util, use_container_width=True)

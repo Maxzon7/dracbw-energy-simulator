@@ -46,36 +46,119 @@ def render_preset_selector():
     sel = st.selectbox("⚡ Load Grid Operator Tariffs (Autofill)", options, help="Wähle einen Anbieter, um die Felder unten automatisch auszufüllen.")
     return sel, mapping.get(sel, None)
 
-def render_financial_inputs(working_fin: dict) -> dict:
+def get_generic_ac_presets() -> dict:
+    return {
+        "AC1 (3x25A - 17 kW)": {
+            "fixed_annual_connection_fee": 200.0,
+            "fixed_annual_transport_fee": 250.0,
+            "contracted_capacity_fee_per_kw_year": 0.0,
+            "peak_capacity_fee_per_kw_month": 0.0,
+            "energy_price_normal_per_kwh": 0.15,
+            "energy_price_laag_per_kwh": 0.10,
+            "contracted_capacity_kw": 17.0,
+            "tariff_mode": "Generic AC1 (3x25A)"
+        },
+        "AC2 (3x35A - 24 kW)": {
+            "fixed_annual_connection_fee": 250.0,
+            "fixed_annual_transport_fee": 300.0,
+            "contracted_capacity_fee_per_kw_year": 0.0,
+            "peak_capacity_fee_per_kw_month": 0.0,
+            "energy_price_normal_per_kwh": 0.15,
+            "energy_price_laag_per_kwh": 0.10,
+            "contracted_capacity_kw": 24.0,
+            "tariff_mode": "Generic AC2 (3x35A)"
+        },
+        "AC3 (3x50A - 35 kW)": {
+            "fixed_annual_connection_fee": 280.0,
+            "fixed_annual_transport_fee": 350.0,
+            "contracted_capacity_fee_per_kw_year": 0.0,
+            "peak_capacity_fee_per_kw_month": 0.0,
+            "energy_price_normal_per_kwh": 0.15,
+            "energy_price_laag_per_kwh": 0.10,
+            "contracted_capacity_kw": 35.0,
+            "tariff_mode": "Generic AC3 (3x50A)"
+        },
+        "AC4 (3x80A - 55 kW)": {
+            "fixed_annual_connection_fee": 320.0,
+            "fixed_annual_transport_fee": 440.0,
+            "contracted_capacity_fee_per_kw_year": 0.0,
+            "peak_capacity_fee_per_kw_month": 0.0,
+            "energy_price_normal_per_kwh": 0.15,
+            "energy_price_laag_per_kwh": 0.10,
+            "contracted_capacity_kw": 55.0,
+            "tariff_mode": "Generic AC4 (3x80A)"
+        },
+        "AC5 (Large Consumer - 150 kW)": {
+            "fixed_annual_connection_fee": 1500.0,
+            "fixed_annual_transport_fee": 440.0,
+            "contracted_capacity_fee_per_kw_year": 25.0,
+            "peak_capacity_fee_per_kw_month": 3.50,
+            "energy_price_normal_per_kwh": 0.15,
+            "energy_price_laag_per_kwh": 0.10,
+            "contracted_capacity_kw": 150.0,
+            "tariff_mode": "Generic AC5"
+        }
+    }
+
+def render_financial_inputs(working_fin: dict, include_financials: bool = True, contract_mode: str = "Real Contract Preset") -> dict:
     """
     Renders the manual input fields INSIDE the form.
     Receives 'working_fin' which contains either the loaded preset or the saved vault data.
     """
-    st.markdown("##### ✍️ 4-Pillar Tariff & Financial Parameters")
-    st.caption("Values are pre-filled if a Preset is selected above. You can freely overwrite them here before saving.")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        fixed_conn = st.number_input("1. Annual Connection Fee (€/Yr)", value=float(working_fin.get('fixed_annual_connection_fee', 1500.0)), step=10.0)
-        fixed_trans = st.number_input("2. Annual Transport Fee (€/Yr)", value=float(working_fin.get('fixed_annual_transport_fee', 440.0)), step=10.0)
-        contract_price = st.number_input("3. Contracted Capacity Price (€/kW/Yr)", value=float(working_fin.get('contracted_capacity_fee_per_kw_year', 25.0)), step=1.0)
-    with col2:
-        peak_price = st.number_input("4. Monthly Peak Penalty (€/kW/Mo)", value=float(working_fin.get('peak_capacity_fee_per_kw_month', 3.50)), step=0.1)
-        kwh_norm = st.number_input("Energy Price Normal (€/kWh)", value=float(working_fin.get('energy_price_normal_per_kwh', 0.15)), format="%.4f", step=0.01)
-        kwh_laag = st.number_input("Energy Price Off-Peak (€/kWh)", value=float(working_fin.get('energy_price_laag_per_kwh', 0.10)), format="%.4f", step=0.01)
+    contracted_kw = float(working_fin.get('contracted_capacity_kw', 100.0))
+    fixed_conn = float(working_fin.get('fixed_annual_connection_fee', 0.0))
+    fixed_trans = float(working_fin.get('fixed_annual_transport_fee', 0.0))
+    contract_price = float(working_fin.get('contracted_capacity_fee_per_kw_year', 0.0))
+    peak_price = float(working_fin.get('peak_capacity_fee_per_kw_month', 0.0))
+    kwh_norm = float(working_fin.get('energy_price_normal_per_kwh', 0.15))
+    kwh_laag = float(working_fin.get('energy_price_laag_per_kwh', 0.10))
+    base_capex = float(working_fin.get('baseline_grid_capex', 0.0))
+    feed_in = float(working_fin.get('feed_in_tariff', 0.08))
+    inflation = float(working_fin.get('inflation', 3.0))
+    diesel = float(working_fin.get('diesel_price', 1.50))
+
+    if include_financials:
+        st.markdown("##### ✍️ 4-Pillar Tariff & Financial Parameters")
+        st.caption("Values are pre-filled if a Preset is selected. You can freely overwrite them here before saving.")
         
-    st.divider()
-    st.markdown("##### ⚙️ Project Specifics & Infrastructure")
-    c1, c2, c3 = st.columns(3)
-    
-    contracted_kw = c1.number_input("Contracted Capacity (kW)", value=float(working_fin.get('contracted_capacity_kw', 100.0)), min_value=0.0, step=10.0)
-    base_capex = c2.number_input("Baseline Grid CAPEX (€)", value=float(working_fin.get('baseline_grid_capex', 0.0)), step=1000.0)
-    feed_in = c3.number_input("Feed-in Tariff (€/kWh)", value=float(working_fin.get('feed_in_tariff', 0.08)), step=0.01)
-    
-    c4, c5, c6 = st.columns(3)
-    inflation = c4.number_input("Energy Inflation (%)", value=float(working_fin.get('inflation', 3.0)), step=0.5)
-    diesel = c5.number_input("Diesel Price (€/L)", value=float(working_fin.get('diesel_price', 1.50)), step=0.05)
-    
+        col1, col2 = st.columns(2)
+        with col1:
+            fixed_conn = st.number_input("1. Annual Connection Fee (€/Yr)", value=fixed_conn, step=10.0)
+            fixed_trans = st.number_input("2. Annual Transport Fee (€/Yr)", value=fixed_trans, step=10.0)
+            contract_price = st.number_input("3. Contracted Capacity Price (€/kW/Yr)", value=contract_price, step=1.0)
+        with col2:
+            peak_price = st.number_input("4. Monthly Peak Penalty (€/kW/Mo)", value=peak_price, step=0.1)
+            kwh_norm = st.number_input("Energy Price Normal (€/kWh)", value=kwh_norm, format="%.4f", step=0.01)
+            kwh_laag = st.number_input("Energy Price Off-Peak (€/kWh)", value=kwh_laag, format="%.4f", step=0.01)
+            
+        st.divider()
+        st.markdown("##### ⚙️ Project Specifics & Infrastructure")
+        c1, c2, c3 = st.columns(3)
+        
+        if contract_mode == "Generic Grid Limit (No Contract)":
+            contracted_kw = c1.number_input("Grid Connection Capacity (kW)", value=contracted_kw, min_value=0.0, step=10.0)
+        else:
+            c1.metric("Grid Capacity Limit", f"{contracted_kw:.1f} kW")
+            
+        base_capex = c2.number_input("Baseline Grid CAPEX (€)", value=base_capex, step=1000.0)
+        feed_in = c3.number_input("Feed-in Tariff (€/kWh)", value=feed_in, step=0.01)
+        
+        c4, c5, c6 = st.columns(3)
+        inflation = c4.number_input("Energy Inflation (%)", value=inflation, step=0.5)
+        diesel = c5.number_input("Diesel Price (€/L)", value=diesel, step=0.05)
+    else:
+        st.markdown("##### 🔌 Connection Capacity Setup")
+        if contract_mode == "Generic Grid Limit (No Contract)":
+            contracted_kw = st.number_input("Grid Connection Capacity (kW)", value=contracted_kw, min_value=0.0, step=10.0)
+        elif contract_mode == "No Contract (Consumption Only)":
+            st.info("Grid connection limit is set to 0.0 kW (Off-grid / Consumption Only).")
+            contracted_kw = 0.0
+        else:
+            st.metric("Grid Capacity Limit", f"{contracted_kw:.1f} kW")
+        
+        # In non-financial mode, pricing is kept at 0 or preset values, but hidden from UI
+        st.caption("Financial fields are hidden. You can enable them above.")
+
     # We output the data so the form submit button can save it
     return {
         "tariff_mode": working_fin.get('tariff_mode', "🛠️ Manual Custom Tariff"),

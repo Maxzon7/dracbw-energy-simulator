@@ -81,24 +81,45 @@ def render_tab3_comparison():
     fig.update_layout(height=450, margin=dict(l=0, r=0, t=20, b=0), yaxis_title="Power (kW)", hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
 
-    # --- 2. THE PHYSICAL DELTA-KPI SAVINGS ENGINE ---
-    if len(selected_profiles) > 1:
-        st.write("### Physical Delta Analysis (Technical Savings)")
+    # --- 2. THE TECHNICAL COMPARISON MATRIX ---
+    if len(selected_profiles) >= 1:
+        st.write("### 🏢 Technical Comparison Matrix")
         
+        comparison_rows = []
         base_df = selected_base_obj.original_profile
         base_limit = selected_base_obj.base_tariff.contracted_capacity_kw
-        base_peak = base_df['consumption_kw'].max()
+        base_peak = base_df['consumption_kw'].max() if 'consumption_kw' in base_df.columns else base_df.iloc[:, 1].max()
         
-        base_breach = base_df[base_df['consumption_kw'] > base_limit]
-        base_breach_kwh = ((base_breach['consumption_kw'] - base_limit) * 0.25).sum() if not base_breach.empty else 0.0
+        base_limit_str = f"{base_limit:.1f} kW" if base_limit < 99000 else "Unlimited"
+        base_margin = base_limit - base_peak
         
-        delta_rows = []
+        if base_limit >= 99000:
+            base_margin_str = "Unlimited"
+            base_avail_str = "Unlimited"
+            base_feasibility = "✅ Ja"
+        else:
+            base_margin_str = f"{base_margin:.1f} kW"
+            base_avail_str = f"{max(0.0, base_margin):.1f} kW"
+            base_feasibility = "✅ Ja" if base_peak <= base_limit else "❌ Nein"
+            
+        comparison_rows.append({
+            "Szenario Name": f"🏢 {selected_base_obj.name} (Basis)",
+            "Netzanschluss": selected_base_obj.base_tariff.name,
+            "Netzleistung": base_limit_str,
+            "Batterie Leistung": "NONE",
+            "Neuer Peak": f"{base_peak:.1f} kW",
+            "Sicherheitsmarge": base_margin_str,
+            "Verfügbare Leistung": base_avail_str,
+            "Technisch ausreichend?": base_feasibility
+        })
+        
         for name in selected_profiles:
             if name == selected_base_name:
-                continue 
+                continue
                 
             sub_obj = next((s for s in linked_subs if s.name == name), None)
-            if not sub_obj: continue
+            if not sub_obj:
+                continue
                 
             sub_df = sub_obj.simulated_profile
             sub_limit = sub_obj.custom_tariff.contracted_capacity_kw if sub_obj.custom_tariff else base_limit
@@ -106,22 +127,33 @@ def render_tab3_comparison():
             y_col = 'final_grid_load_kw' if 'final_grid_load_kw' in sub_df.columns else 'consumption_kw'
             sub_peak = sub_df[y_col].max()
             
-            sub_breach = sub_df[sub_df[y_col] > sub_limit]
-            sub_breach_kwh = ((sub_breach[y_col] - sub_limit) * 0.25).sum() if not sub_breach.empty else 0.0
+            sub_limit_str = f"{sub_limit:.1f} kW" if sub_limit < 99000 else "Unlimited"
+            sub_margin = sub_limit - sub_peak
             
-            peak_savings = base_peak - sub_peak
-            overload_savings_kwh = base_breach_kwh - sub_breach_kwh
+            if sub_limit >= 99000:
+                sub_margin_str = "Unlimited"
+                sub_avail_str = "Unlimited"
+                sub_feasibility = "✅ Ja"
+            else:
+                sub_margin_str = f"{sub_margin:.1f} kW"
+                sub_avail_str = f"{max(0.0, sub_margin):.1f} kW"
+                sub_feasibility = "✅ Ja" if sub_peak <= sub_limit else "❌ Nein"
+                
+            b_str = f"{sub_obj.battery_kwh:.1f} kWh / {sub_obj.battery_kw:.1f} kW" if sub_obj.battery_kwh > 0 else "NONE"
+            t_name = sub_obj.custom_tariff.name if sub_obj.custom_tariff else selected_base_obj.base_tariff.name
             
-            delta_rows.append({
-                "Variant": name,
-                "Max Peak Load (kW)": f"{sub_peak:.1f} kW",
-                "Peak Reduction (Δ kW)": f"+ {peak_savings:.1f} kW" if peak_savings >= 0 else f"- {abs(peak_savings):.1f} kW",
-                "Remaining Grid Overload": f"{sub_breach_kwh:,.0f} kWh",
-                "Overload Energy Saved (Δ kWh)": f"+ {overload_savings_kwh:,.0f} kWh" if overload_savings_kwh >= 0 else f"- {abs(overload_savings_kwh):,.0f} kWh"
+            comparison_rows.append({
+                "Szenario Name": f"🌿 {sub_obj.name}",
+                "Netzanschluss": t_name,
+                "Netzleistung": sub_limit_str,
+                "Batterie Leistung": b_str,
+                "Neuer Peak": f"{sub_peak:.1f} kW",
+                "Sicherheitsmarge": sub_margin_str,
+                "Verfügbare Leistung": sub_avail_str,
+                "Technisch ausreichend?": sub_feasibility
             })
             
-        if delta_rows:
-            st.dataframe(pd.DataFrame(delta_rows), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(comparison_rows), use_container_width=True, hide_index=True)
             
         # --- 3. THE CFO FINANCIAL DASHBOARD ---
         st.divider()
@@ -155,8 +187,6 @@ def render_cfo_cockpit_from_classes(base_scenario, selected_subs):
         col1, col2 = st.columns(2)
         
         kpi_data = []
-        
-        # Plotly Setup für das Finanz-Diagramm (Robuster als st.line_chart!)
         fig_cf = go.Figure()
         
         for sub in selected_subs:
@@ -164,7 +194,6 @@ def render_cfo_cockpit_from_classes(base_scenario, selected_subs):
                 df_cashflow = generate_15_year_cashflow(sub, base_scenario)
                 payback = get_payback_year(df_cashflow)
                 
-                # Trace hinzufügen
                 fig_cf.add_trace(go.Scatter(
                     x=df_cashflow["Jahr"],
                     y=df_cashflow["Kumulierter_Cashflow"],
@@ -189,3 +218,16 @@ def render_cfo_cockpit_from_classes(base_scenario, selected_subs):
             fig_cf.update_layout(height=400, hovermode="x unified", xaxis_title="Years", yaxis_title="Cashflow (€)", margin=dict(l=0, r=0, t=10, b=0))
             fig_cf.add_hline(y=0, line_dash="dash", line_color="red", annotation_text="Break-Even", annotation_position="bottom right")
             st.plotly_chart(fig_cf, use_container_width=True)
+
+        st.divider()
+        st.markdown("### 📋 Detailed Year-by-Year Cashflows")
+        for sub in selected_subs:
+            if sub.financials:
+                df_cashflow = generate_15_year_cashflow(sub, base_scenario)
+                if df_cashflow is not None:
+                    with st.expander(f"🌿 Cashflow-Zahlungsreihe: {sub.name}", expanded=False):
+                        formatted_df = df_cashflow.copy()
+                        for col in formatted_df.columns:
+                            if col != "Jahr":
+                                formatted_df[col] = formatted_df[col].apply(lambda x: f"€ {x:,.2f}")
+                        st.dataframe(formatted_df, use_container_width=True, hide_index=True)
