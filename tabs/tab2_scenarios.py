@@ -141,6 +141,18 @@ def render_tab2_scenarios():
                 }
                 sim_grid_limit = 0.0
 
+        # Calculation Resolution Toggle
+        st.write("---")
+        st.write("#### ⏱️ Calculation Resolution")
+        calc_res = st.radio(
+            "Select Resolution:",
+            ["Hourly (Fast / Schnell)", "15-Minute (High Accuracy / Genau)"],
+            index=0,
+            key=f"calc_res_sel_{selected_base_name}",
+            help="Hourly resolution runs 4x faster. Use 15-Minute resolution for final verification."
+        )
+        use_15min = "15-Minute" in calc_res
+
         # Build dynamic scenario mode label
         active_mode_list = []
         if enable_solar: active_mode_list.append("Solar")
@@ -153,7 +165,8 @@ def render_tab2_scenarios():
             'solar': enable_solar,
             'battery': enable_battery,
             'generator': enable_generator,
-            'grid': enable_grid
+            'grid': enable_grid,
+            'res_15min': use_15min
         }
 
         with st.form("scenario_tech_form"):
@@ -185,6 +198,18 @@ def render_tab2_scenarios():
             # Expander removed to render under the chart instead
             run_sim = st.form_submit_button("Run / Update Simulation", type="primary", use_container_width=True)
 
+        # Prepare the baseline dataframe matching the selected resolution
+        plot_base_df = baseline_df[['timestamp', 'consumption_kw']].copy() if 'timestamp' in baseline_df.columns else baseline_df.copy()
+        if 'timestamp' in plot_base_df.columns:
+            plot_base_df['timestamp'] = pd.to_datetime(plot_base_df['timestamp'])
+            
+        if not use_15min:
+            if 'timestamp' in plot_base_df.columns:
+                plot_base_df = plot_base_df.set_index('timestamp').resample('h').max().reset_index()
+            res = 60
+        else:
+            res = 15
+
         # Decide whether to run calculations or use cached values
         should_calculate = run_sim or \
                            st.session_state.get('last_calculated_project') != selected_base_name or \
@@ -192,7 +217,7 @@ def render_tab2_scenarios():
                            'active_sim_results' not in st.session_state
 
         if should_calculate:
-            clean_base_df = baseline_df[['timestamp', 'consumption_kw']].copy() if 'timestamp' in baseline_df.columns else baseline_df.copy()
+            clean_base_df = plot_base_df.copy()
             calculated_df = clean_base_df.copy()
             calculated_df['solar_gen_kw'] = 0.0
             calculated_df['battery_action_kw'] = 0.0
@@ -302,7 +327,7 @@ def render_tab2_scenarios():
             'lim': "#FF0000", 'sol_self': "#4CAF50", 'sol_bat': "#AB63FA", 'sol_exc': "#FF9800"
         })
         render_results_and_charts(
-            calculated_df, baseline_df, sim_grid_limit, res,
+            calculated_df, plot_base_df, sim_grid_limit, res,
             scenario_mode, params, project_metadata, selected_base_name, False, colors_to_use, f"Report_{selected_base_name}"
         )
         
