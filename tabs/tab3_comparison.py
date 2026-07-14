@@ -162,6 +162,11 @@ def render_tab3_comparison():
         
         active_subs = [s for s in linked_subs if s.name in selected_profiles]
         render_cfo_cockpit_from_classes(selected_base_obj, active_subs)
+        
+        # --- 4. PROFESSIONAL PDF EXPORTER ---
+        st.divider()
+        from tabs.tab3_components.pdf_comparison_export import render_comparison_pdf_downloader
+        render_comparison_pdf_downloader(selected_base_obj, selected_profiles, linked_subs)
 
 def render_cfo_cockpit_from_classes(base_scenario, selected_subs):
     st.header("📊 Executive CFO Dashboard")
