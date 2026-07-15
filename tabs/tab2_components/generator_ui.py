@@ -25,7 +25,29 @@ def render_generator_ui(scenario_id: str, existing_params: dict = None) -> dict:
         help="Average diesel/gas consumption per produced kWh."
     )
     
+    # Financial Parameters - conditional on global toggle
+    capex_per_year = float(existing_params.get("capex_per_year", 0.0))
+    opex_per_hour = float(existing_params.get("opex_per_hour", 0.0))
+    
+    if st.session_state.get('enable_financials', False):
+        st.write(" **Generator Financial Parameters**")
+        cf1, cf2 = st.columns(2)
+        capex_per_year = cf1.number_input(
+            "Generator CAPEX / Annual Rental (€/Yr)",
+            value=capex_per_year, step=500.0,
+            key=f"gen_capex_{scenario_id}",
+            help="Annual cost of purchasing or renting/leasing the generator hardware."
+        )
+        opex_per_hour = cf2.number_input(
+            "Maintenance Cost (€/Operating Hour)",
+            value=opex_per_hour, step=1.0,
+            key=f"gen_opex_hr_{scenario_id}",
+            help="Service, oil, and filters cost per engine running hour."
+        )
+        
     return {
         "gen_pwr": gen_pwr,
-        "fuel_l_per_kwh": fuel_rate
+        "fuel_l_per_kwh": fuel_rate,
+        "capex_per_year": capex_per_year,
+        "opex_per_hour": opex_per_hour
     }

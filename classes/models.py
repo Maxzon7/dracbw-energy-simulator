@@ -27,6 +27,7 @@ class FinancialParams:
     lifespan_years: int = 15       # Betrachtungszeitraum
     inflation_rate: float = 0.02   # 2% Standard-Inflation
     energy_price_growth: float = 0.04 # 4% Strompreissteigerung
+    diesel_price_growth: float = 0.02 # 2% Dieselpreissteigerung
 
 # ==========================================
 # 3. SUB-SZENARIO (Das Child / Die Lösung)

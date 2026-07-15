@@ -1,79 +1,186 @@
 # tabs/tab3_components/financial_engine.py
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from classes.models import BaseScenario, SubScenario
 
+def calculate_irr(cashflows: list, max_iter: int = 1000, tolerance: float = 1e-6) -> float:
+    """
+    Calculates the Internal Rate of Return (IRR) using the bisection method.
+    Returns -1.0 if it doesn't converge or lacks a single sign change.
+    """
+    # Check if there is at least one positive and one negative cashflow
+    has_pos = any(cf > 0 for cf in cashflows)
+    has_neg = any(cf < 0 for cf in cashflows)
+    if not (has_pos and has_neg):
+        return -1.0
+        
+    def npv_f(r):
+        return sum(cf / ((1.0 + r) ** t) for t, cf in enumerate(cashflows))
+        
+    # Search bounds for r
+    low = -0.99
+    high = 5.0
+    
+    f_low = npv_f(low)
+    f_high = npv_f(high)
+    
+    if f_low * f_high > 0:
+        # Search for a sign change
+        step = 0.5
+        found = False
+        for _ in range(20):
+            high += step
+            f_high = npv_f(high)
+            if f_low * f_high < 0:
+                found = True
+                break
+        if not found:
+            return -1.0
+            
+    # Bisection search
+    for _ in range(max_iter):
+        mid = (low + high) / 2.0
+        f_mid = npv_f(mid)
+        if abs(f_mid) < tolerance:
+            return mid
+        if f_low * f_mid < 0:
+            high = mid
+            f_high = f_mid
+        else:
+            low = mid
+            f_low = f_mid
+            
+    return (low + high) / 2.0
+
 def render_financial_dashboard(selected_profiles: list, selected_base: str, vault: dict):
     """
-    Dynamically calculates and visualizes the 15-year cashflow, ROI, and Net Present Value (NPV)
-    for all selected hardware sub-scenarios against the baseline.
-    Generates detailed year-by-year cashflow series and auto-saves them back into the vault.
+    Dynamically calculates and visualizes project lifespan cashflows, ROI, LCOE, and TCO.
+    Supports interactive Sensitivity Analysis and Scenario Ranking.
     """
-    st.write("### 💶 Executive Financial Dashboard (DCF & ROI Analysis)")
+    # Guard check: Ensure financials are enabled
+    if not st.session_state.get('enable_financials', False):
+        return
+
+    st.write("### Executive Financial Dashboard (DCF & ROI Analysis)")
     
-    col_info, col_wacc = st.columns([2, 1])
-    with col_info:
-        st.info("Discounted Cash Flow (DCF) projection over 15 years including CAPEX, OPEX, grid tariffs, fuel costs, and compounding energy inflation.")
-    with col_wacc:
-        discount_rate = st.number_input(
-            "Discount Rate / WACC (%)", 
-            value=5.0, step=0.5, 
-            help="Used to discount future cashflows to calculate the Net Present Value (NPV)."
-        ) / 100.0
-    
-    # 1. Extract Baseline Financial DNA
+    # 1. Unpack Baseline reference
     base_data = vault[selected_base]
     base_df = base_data['df']
     base_fin = base_data.get('params', {}).get('financial_metadata', {})
     
-    e_price = base_fin.get('energy_charge', 0.25)
-    p_price = base_fin.get('demand_charge', 120.0)
-    base_grid_capex = base_fin.get('baseline_grid_capex', 0.0) 
-    fit = base_fin.get('feed_in_tariff', 0.08)
-    inflation = base_fin.get('inflation', 3.0) / 100.0
-    diesel_price = base_fin.get('diesel_price', 1.50) # NEW: Unpack fuel price
+    if not base_fin or not base_fin.get('lifespan_years'):
+        st.info("Please set up the Baseline Financial data in Tab 1 first.")
+        return
+
+    # Extract global variables
+    lifespan = int(base_fin.get('lifespan_years', 15))
+    e_price = float(base_fin.get('energy_price_normal_per_kwh', 0.25))
+    p_price = float(base_fin.get('contracted_capacity_fee_per_kw_year', 0.0)) + (float(base_fin.get('peak_capacity_fee_per_kw_month', 0.0)) * 12.0)
+    base_grid_capex = float(base_fin.get('baseline_grid_capex', 0.0))
+    fit = float(base_fin.get('feed_in_tariff', 0.08))
+    diesel_price = float(base_fin.get('diesel_price', 1.50))
+    
+    inflation_rate = float(base_fin.get('inflation', 3.0)) / 100.0
+    energy_price_growth = float(base_fin.get('energy_price_growth', 4.0)) / 100.0
+    diesel_price_growth = float(base_fin.get('diesel_price_growth', 2.0)) / 100.0
     
     res = base_data.get('params', {}).get('resolution', 15)
     factor = 60 / res
     
-    # 2. Calculate Baseline BAU (Business As Usual) Costs
+    # Baseline BAU inputs
     base_kwh = base_df['consumption_kw'].sum() / factor
     base_peak = base_df['consumption_kw'].max()
-    base_grid_bill_yr1 = (base_kwh * e_price) + (base_peak * p_price)
     
+    col_info, col_wacc = st.columns([2, 1])
+    with col_info:
+        st.info(f"Discounted Cash Flow (DCF) projection over a **{lifespan}-Year Lifespan** factoring CAPEX, OPEX, grid tariffs, fuel costs, and escalation.")
+    with col_wacc:
+        discount_rate = st.number_input(
+            "Discount Rate / WACC (%)", 
+            value=5.0, step=0.5, 
+            key="wacc_input",
+            help="Used to discount future cashflows to calculate the Net Present Value (NPV)."
+        ) / 100.0
+
+    # Sensitivity inputs in expander
+    with st.expander("📊 Sensitivity Analysis Settings", expanded=False):
+        st.write("Simulate changes in core economic factors to test scenario robustness:")
+        sens_col1, sens_col2, sens_col3 = st.columns(3)
+        capex_mult = sens_col1.slider("CAPEX Variation (%)", -20, 20, 0, step=5, key="sens_capex_var") / 100.0 + 1.0
+        energy_inf_add = sens_col2.slider("Additional Energy Escalation (%/Yr)", -3.0, 5.0, 0.0, step=0.5, key="sens_energy_inf") / 100.0
+        fuel_inf_add = sens_col3.slider("Additional Fuel Escalation (%/Yr)", -3.0, 5.0, 0.0, step=0.5, key="sens_fuel_inf") / 100.0
+
+    # Apply Sensitivity variations
+    active_energy_growth = energy_price_growth + energy_inf_add
+    active_diesel_growth = diesel_price_growth + fuel_inf_add
+
+    # Calculate Baseline BAU cashflows
+    # BAU CAPEX = base_grid_capex at Year 0
+    discounted_energy_sum = 0.0
+    base_tco = base_grid_capex
+    
+    # Calculate Year 1 Baseline cost
+    base_grid_bill_y1 = (base_kwh * e_price) + (base_peak * p_price)
+    
+    for y in range(1, lifespan + 1):
+        grid_multiplier = (1.0 + active_energy_growth) ** (y - 1)
+        discount_multiplier = (1.0 + discount_rate) ** y
+        
+        bill_y = base_grid_bill_y1 * grid_multiplier
+        base_tco += bill_y / discount_multiplier
+        discounted_energy_sum += base_kwh / discount_multiplier
+        
+    base_lcoe = base_tco / discounted_energy_sum if discounted_energy_sum > 0 else 0.0
+
     fig = go.Figure()
-    fig.add_hline(y=0, line_color="white", line_width=1)
+    fig.add_hline(y=0, line_color="rgba(100,100,100,0.5)", line_width=1, line_dash="dash")
     
-    summary_data = []
+    summary_rows = []
     detailed_tables = {}
     
-    # 3. Calculate Advanced Cashflow Series for every Variant
+    # Add Baseline TCO reference curve
+    base_cf_plot = [base_grid_capex]
+    base_cum_cost = base_grid_capex
+    for y in range(1, lifespan + 1):
+        grid_multiplier = (1.0 + active_energy_growth) ** (y - 1)
+        bill_y = base_grid_bill_y1 * grid_multiplier
+        base_cum_cost += bill_y
+        base_cf_plot.append(-base_cum_cost)
+        
+    # Standardised DCF loops for each Variant Scenario
     for name in selected_profiles:
         if name == selected_base:
-            continue # Baseline itself has no comparative ROI
+            continue
             
         scen = vault[name]
         sub_df = scen['df']
         hw_params = scen.get('params', {}).get('hardware_params', {})
         
-        # Safely extract CAPEX/OPEX depending on Isolated vs. Combined mode
-        capex = hw_params.get('total_capex', 0)
+        # CAPEX/OPEX structures
+        capex_raw = hw_params.get('total_capex', 0)
         opex_pct = hw_params.get('opex_pct', 0) / 100.0
         degradation_pct = hw_params.get('degradation_pct', 0) / 100.0
-        opex_yr1 = capex * opex_pct
         
-        # NEU: Variablen für den Batterietausch vorbereiten
-        rep_year = 99 # Default: Findet nicht statt
+        # Extract dynamic replacements
+        rep_year = 99
         rep_base_cost = 0.0
+        gen_rent = 0.0
+        gen_maint_hr = 0.0
         
-        if capex > 0: # Isoliertes Szenario
-            if 'replacement_year' in hw_params: # Es ist eine Batterie
+        if capex_raw > 0: # Isolated Scenario
+            capex = capex_raw * capex_mult
+            opex_yr1 = capex * opex_pct
+            if 'replacement_year' in hw_params:
                 rep_year = hw_params.get('replacement_year', 10)
                 rep_pct = hw_params.get('replacement_pct', 100.0) / 100.0
                 rep_base_cost = hw_params.get('total_storage_capex', 0) * rep_pct
-                
-        elif capex == 0: # Combined Cascade Szenario (Hardware steckt in Unter-Ordnern)
+            gen_params = hw_params.get('generator', {})
+            gen_rent = float(gen_params.get('capex_per_year', 0.0))
+            gen_maint_hr = float(gen_params.get('opex_per_hour', 0.0))
+            
+        else: # Combined Cascading configurations
             c1 = hw_params.get('solar', {}).get('total_capex', 0)
             c2 = hw_params.get('battery', {}).get('total_capex', 0)
             o1 = c1 * (hw_params.get('solar', {}).get('opex_pct', 0) / 100.0)
@@ -81,127 +188,174 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
             d1 = hw_params.get('solar', {}).get('degradation_pct', 0) / 100.0
             d2 = hw_params.get('battery', {}).get('degradation_pct', 0) / 100.0
             
-            capex = c1 + c2
-            opex_yr1 = o1 + o2
+            capex = (c1 + c2) * capex_mult
+            opex_yr1 = (o1 + o2) * capex_mult
             
-            # Weighted average degradation based on CAPEX split
-            if capex > 0:
-                degradation_pct = ((c1 * d1) + (c2 * d2)) / capex
+            if capex_raw > 0:
+                degradation_pct = ((c1 * d1) + (c2 * d2)) / capex_raw
             else:
                 degradation_pct = 0.0
                 
-            # Batterietausch aus dem Combined-Objekt extrahieren
             bat_params = hw_params.get('battery', {})
             rep_year = bat_params.get('replacement_year', 99)
             rep_pct = bat_params.get('replacement_pct', 100.0) / 100.0
             rep_base_cost = bat_params.get('total_storage_capex', 0) * rep_pct
             
-        if capex == 0:
-            continue # Skip non-hardware scenarios
+            gen_params = hw_params.get('generator', {})
+            gen_rent = float(gen_params.get('capex_per_year', 0.0))
+            gen_maint_hr = float(gen_params.get('opex_per_hour', 0.0))
+
+        if capex == 0 and gen_rent == 0:
+            continue # Skip non-investments
             
-        # Variant Operational Costs (Grid interaction only)
+        # Year 1 operational calculations
         sub_kwh = sub_df['final_grid_load_kw'].clip(lower=0.0).sum() / factor
         sub_peak = sub_df['final_grid_load_kw'].max()
-        sub_export = sub_df.get('grid_feed_in_kw', pd.Series([0])).sum() / factor
+        sub_export = sub_df.get('grid_feed_in_kw', pd.Series([0.0])).sum() / factor
         
         sub_grid_bill_yr1 = (sub_kwh * e_price) + (sub_peak * p_price) - (sub_export * fit)
-        grid_savings_yr1 = base_grid_bill_yr1 - sub_grid_bill_yr1
+        grid_savings_yr1 = base_grid_bill_y1 - sub_grid_bill_yr1
         
-        # GENERATOR FUEL COSTS
-        annual_fuel_l = sub_df.get('generator_fuel_l', pd.Series([0])).sum()
+        # Generator O&M & Fuel calculations
+        annual_fuel_l = sub_df.get('generator_fuel_l', pd.Series([0.0])).sum()
         fuel_cost_yr1 = annual_fuel_l * diesel_price
         
-        # --- 15-YEAR CASHFLOW CASCADING MATHEMATICS ---
-        cf_table = []
+        gen_action = sub_df.get('generator_action_kw', pd.Series([0.0]))
+        run_hours = (gen_action > 0.1).sum()
+        gen_maint_yr1 = run_hours * gen_maint_hr
         
-        # Net Year 0 cashflow accounts for avoided grid upgrade costs minus new hardware investments
+        # Build cashflows tables
+        cf_table = []
         net_year0 = base_grid_capex - capex
         cum_cf = net_year0
         cum_npv = net_year0
         
-        # Year 0: Initial Investment / Avoided Baseline Cost
         cf_table.append({
             "Year": 0, 
             "CAPEX (€)": round(-capex, 2), 
-            "OPEX (€)": 0, 
-            "Fuel Cost (€)": 0,
+            "OPEX (€)": 0.0, 
+            "Generator Fuel (€)": 0.0,
+            "Generator Rental (€)": 0.0,
+            "Generator Maintenance (€)": 0.0,
             "Grid Savings (€)": round(base_grid_capex, 2),
             "Net Cashflow (€)": round(net_year0, 2), 
             "Cumulative Cashflow (€)": round(cum_cf, 2), 
-            "Present Value (PV)": round(net_year0, 2), 
+            "Present Value (€)": round(net_year0, 2), 
             "Cumulative NPV (€)": round(cum_npv, 2)
         })
         
-        break_even_yr = 0 if cum_cf >= 0 else "> 15"
+        sub_tco = capex
+        break_even_yr = 0 if cum_cf >= 0 else "> lifespan"
+        cashflow_series_list = [net_year0]
         
-        # Years 1 to 15: Operations & Compounding
-        for y in range(1, 16):
-            infl_multiplier = (1 + inflation) ** (y - 1)
-            deg_multiplier = (1 - degradation_pct) ** (y - 1)
+        for y in range(1, lifespan + 1):
+            infl_multiplier = (1.0 + inflation_rate) ** (y - 1)
+            deg_multiplier = (1.0 - degradation_pct) ** (y - 1)
             
-            sav_y = grid_savings_yr1 * infl_multiplier * deg_multiplier
+            grid_multiplier = (1.0 + active_energy_growth) ** (y - 1)
+            fuel_multiplier = (1.0 + active_diesel_growth) ** (y - 1)
+            discount_multiplier = (1.0 + discount_rate) ** y
+            
+            sav_y = grid_savings_yr1 * grid_multiplier * deg_multiplier
             opx_y = opex_yr1 * infl_multiplier
-            fuel_y = fuel_cost_yr1 * infl_multiplier
+            fuel_y = fuel_cost_yr1 * fuel_multiplier
+            gen_rent_y = gen_rent * infl_multiplier
+            gen_maint_y = gen_maint_yr1 * infl_multiplier
             
-            # NEU: Prüfen, ob in diesem Jahr der Batterietausch fällig ist
             rep_y = 0.0
             if y == rep_year:
-                # Ersatzteile unterliegen auch der normalen wirtschaftlichen Inflation
-                rep_y = rep_base_cost * infl_multiplier 
-
-            net_y = sav_y - opx_y - fuel_y - rep_y
+                rep_y = rep_base_cost * infl_multiplier
+                
+            net_y = sav_y - opx_y - fuel_y - gen_rent_y - gen_maint_y - rep_y
             cum_cf += net_y
+            cashflow_series_list.append(net_y)
             
-            # Discounting for Net Present Value (NPV)
-            pv_y = net_y / ((1 + discount_rate) ** y)
+            pv_y = net_y / discount_multiplier
             cum_npv += pv_y
+            
+            # TCO elements sum (discounted costs)
+            annual_net_cost = sub_grid_bill_yr1 * grid_multiplier + opx_y + fuel_y + gen_rent_y + gen_maint_y + rep_y - sub_export * fit * grid_multiplier
+            sub_tco += annual_net_cost / discount_multiplier
             
             cf_table.append({
                 "Year": y, 
-                "CAPEX (€)": round(-rep_y, 2), # Wenn rep_y > 0, taucht es hier sauber auf!
+                "CAPEX (€)": round(-rep_y, 2),
                 "OPEX (€)": round(-opx_y, 2), 
-                "Fuel Cost (€)": round(-fuel_y, 2),
+                "Generator Fuel (€)": round(-fuel_y, 2),
+                "Generator Rental (€)": round(-gen_rent_y, 2),
+                "Generator Maintenance (€)": round(-gen_maint_y, 2),
                 "Grid Savings (€)": round(sav_y, 2), 
                 "Net Cashflow (€)": round(net_y, 2), 
                 "Cumulative Cashflow (€)": round(cum_cf, 2), 
-                "Present Value (PV)": round(pv_y, 2), 
+                "Present Value (€)": round(pv_y, 2), 
                 "Cumulative NPV (€)": round(cum_npv, 2)
             })
             
-            if break_even_yr == "> 15" and cum_cf >= 0:
+            if break_even_yr == "> lifespan" and cum_cf >= 0:
                 break_even_yr = y
                 
-        # --- SAVE FINANCIALS DIRECTLY INTO THE ACTIVE VAULT ---
+        # Calculate IRR
+        irr_val = calculate_irr(cashflow_series_list)
+        irr_str = f"{irr_val*100.0:.2f} %" if irr_val > -0.9 else "N/A"
+        
+        # Calculate LCOE
+        lcoe_val = sub_tco / discounted_energy_sum if discounted_energy_sum > 0 else 0.0
+        
+        # Save financials to vault
         vault[name]['financial_metrics'] = {
             "discount_rate_used": discount_rate,
             "roi_years": break_even_yr,
             "net_present_value": cum_npv,
             "total_15y_profit": cum_cf,
+            "tco": sub_tco,
+            "lcoe": lcoe_val,
+            "irr": irr_val,
             "cashflow_series": cf_table
         }
         
-        # Add Line to Waterfall Chart
+        # Plot cumulative cashflow
         plot_y = [row["Cumulative Cashflow (€)"] for row in cf_table]
         fig.add_trace(go.Scatter(
-            x=list(range(16)), y=plot_y, mode='lines+markers', name=name,
+            x=list(range(lifespan + 1)), y=plot_y, mode='lines+markers', name=name,
             hovertemplate="Year %{x}<br>Cashflow: %{y:,.0f} €"
         ))
         
-        # Add to Summary Dashboard
-        summary_data.append({
-            "Variant Scenario": name,
-            "Total CAPEX": f"- {capex:,.0f} €",
-            "Year 1 Net Savings": f"+ {grid_savings_yr1 - opex_yr1 - fuel_cost_yr1:,.0f} €",
-            "Fuel Penalty (Y1)": f"- {fuel_cost_yr1:,.0f} €" if fuel_cost_yr1 > 0 else "0 €",
-            "Break-Even (ROI)": f"{break_even_yr} Years" if isinstance(break_even_yr, str) or break_even_yr > 0 else "Instant (Day 1)",
-            "15Y Cum. Cashflow": f"{cum_cf:,.0f} €",
-            "15Y Net Present Value (NPV)": f"{cum_npv:,.0f} €"
+        # Create row object
+        summary_rows.append({
+            "Scenario": name,
+            "NPV (Net Present Value)": cum_npv,
+            "TCO (Total Cost of Ownership)": sub_tco,
+            "LCOE (€/kWh)": lcoe_val,
+            "IRR": irr_str,
+            "Payback Period": break_even_yr,
+            "Initial CAPEX": capex,
+            "Year 1 Net Savings": grid_savings_yr1 - opex_yr1 - fuel_cost_yr1 - gen_rent - gen_maint_yr1,
+            "Fuel Penalty (Y1)": fuel_cost_yr1 + gen_maint_yr1
         })
         
         detailed_tables[name] = cf_table
         
-    # --- RENDER OUTPUTS ---
-    if summary_data:
+    # Render graphs & tables
+    if summary_rows:
+        # Create baseline BAU summary row
+        summary_rows.append({
+            "Scenario": f"{selected_base} (Baseline BAU)",
+            "NPV (Net Present Value)": 0.0,
+            "TCO (Total Cost of Ownership)": base_tco,
+            "LCOE (€/kWh)": base_lcoe,
+            "IRR": "Baseline Ref",
+            "Payback Period": "Baseline Ref",
+            "Initial CAPEX": base_grid_capex,
+            "Year 1 Net Savings": 0.0,
+            "Fuel Penalty (Y1)": 0.0
+        })
+        
+        # Sort/Rank based on NPV (descending) or TCO (ascending)
+        summary_df = pd.DataFrame(summary_rows)
+        # Sort scenario rows so variants with higher NPV appear first, BAU at bottom
+        summary_df["sorting_key"] = summary_df["NPV (Net Present Value)"].apply(lambda x: x if x is not None else -9999999.0)
+        summary_df = summary_df.sort_values(by="sorting_key", ascending=False).drop(columns=["sorting_key"])
+        
         fig.update_layout(
             height=400, margin=dict(l=0, r=0, t=10, b=0),
             xaxis_title="Operating Year", yaxis_title="Cumulative Net Cashflow (€)",
@@ -209,103 +363,189 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
         )
         st.plotly_chart(fig, use_container_width=True)
         
-        st.write("#### 🏆 Financial Performance Summary")
-        st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
+        st.write("#### Financial Performance Summary & Rankings")
+        # Format df columns
+        disp_df = summary_df.copy()
+        disp_df["NPV (Net Present Value)"] = disp_df["NPV (Net Present Value)"].apply(lambda x: f"{x:,.0f} €" if x != 0.0 else "0 €")
+        disp_df["TCO (Total Cost of Ownership)"] = disp_df["TCO (Total Cost of Ownership)"].apply(lambda x: f"{x:,.0f} €")
+        disp_df["LCOE (€/kWh)"] = disp_df["LCOE (€/kWh)"].apply(lambda x: f"{x:.4f} €/kWh")
+        disp_df["Initial CAPEX"] = disp_df["Initial CAPEX"].apply(lambda x: f"{x:,.0f} €")
+        disp_df["Year 1 Net Savings"] = disp_df["Year 1 Net Savings"].apply(lambda x: f"{x:,.0f} €" if x != 0.0 else "N/A")
+        disp_df["Fuel Penalty (Y1)"] = disp_df["Fuel Penalty (Y1)"].apply(lambda x: f"{x:,.0f} €" if x != 0.0 else "0 €")
+        
+        st.dataframe(disp_df, use_container_width=True, hide_index=True)
         
         st.divider()
-        st.write("#### 📊 Detailed 15-Year Cashflow Series")
-        st.info("Analyze the exact yearly progression of grid savings, maintenance costs, fuel burn penalties, and discounted values.")
+        st.write("#### Detailed Year-by-Year Cashflow Tables")
         
         variant_names = list(detailed_tables.keys())
-        ui_tabs = st.tabs([f"🌿 {n}" for n in variant_names])
+        ui_tabs = st.tabs([f"{n}" for n in variant_names])
         
         for idx, t_name in enumerate(variant_names):
             with ui_tabs[idx]:
                 df_cf = pd.DataFrame(detailed_tables[t_name])
                 st.dataframe(
-                    df_cf.style.format({col: "{:,.0f} €" for col in df_cf.columns if "€" in col or "PV" in col}),
+                    df_cf.style.format({col: "{:,.0f} €" for col in df_cf.columns if "€" in col or "PV" in col or "Value" in col or "NPV" in col}),
                     use_container_width=True, hide_index=True
                 )
     else:
-        st.warning("Please select at least one hardware variant (with CAPEX configured) to view the financial ROI analysis.")
+        st.warning("Please configure and select at least one hardware variant (with CAPEX configured) to view the financial ROI analysis.")
 
 
-def generate_15_year_cashflow(sub_scenario: SubScenario, base_scenario: BaseScenario) -> pd.DataFrame:
+def generate_15_year_cashflow(sub_scenario: SubScenario, base_scenario: BaseScenario, discount_rate: float = 0.05, capex_mult: float = 1.0, energy_esc_add: float = 0.0, diesel_esc_add: float = 0.0) -> pd.DataFrame:
     """
-    Das Herzstück der Finanzsimulation. 
-    Nimmt ein SubSzenario und berechnet die jährlichen Kosten/Gewinne.
-    Gibt 'None' zurück, wenn der User keine Finanzen aktiviert hat!
+    Calculates year-by-year cashflow series comparing sub-scenario configurations against the baseline.
+    Returns None if financials are not active (financials is None).
     """
-    
-    # ==========================================
-    # 1. DER SICHERHEITSSCHALTER
-    # ==========================================
-    # Wenn der User in Tab 2 den Finanz-Schalter auf "OFF" gelassen hat,
-    # ist dieses Feld 'None'. Wir brechen sofort sicher ab.
     if not sub_scenario.financials:
         return None 
         
     fin = sub_scenario.financials
     lifespan = fin.lifespan_years
+    inflation_rate = fin.inflation_rate
     
-    # Wir bereiten eine Tabelle vor (Jahr 0 bis Jahr 15)
+    # Safely unpack escalations
+    energy_esc = getattr(fin, 'energy_price_growth', 0.04)
+    if energy_esc > 1.0:
+        energy_esc /= 100.0
+    elif energy_esc == 0.0:
+        energy_esc = 0.04
+    energy_esc += energy_esc_add
+        
+    diesel_esc = getattr(fin, 'diesel_price_growth', 0.02)
+    if diesel_esc > 1.0:
+        diesel_esc /= 100.0
+    elif diesel_esc == 0.0:
+        diesel_esc = 0.02
+    diesel_esc += diesel_esc_add
+        
+    # Extract baseline profile and simulated profiles
+    base_df = base_scenario.original_profile
+    sub_df = sub_scenario.simulated_profile
+    
+    if len(base_df) > 0:
+        factor = 4.0 if len(base_df) > 15000 else 1.0
+    else:
+        factor = 1.0
+        
+    # Year 1 Baseline grid costs
+    base_kwh = base_df['consumption_kw'].sum() / factor
+    base_peak = base_df['consumption_kw'].max()
+    base_tariff = base_scenario.base_tariff
+    
+    # Calculate grid limit CAPEX/avoided baseline
+    fin_meta = base_scenario.metadata.get('financial_metadata', {})
+    base_grid_capex = float(fin_meta.get('baseline_grid_capex', 0.0))
+    fit = float(fin_meta.get('feed_in_tariff', 0.08))
+    diesel_price = float(fin_meta.get('diesel_price', 1.50))
+    
+    base_grid_bill = (
+        base_tariff.fixed_costs_per_year +
+        (base_kwh * base_tariff.price_per_kwh) +
+        (base_peak * base_tariff.price_per_kw_peak)
+    )
+    
+    # Year 1 Sub-Scenario grid costs (including custom tariff overrides)
+    sub_tariff = sub_scenario.custom_tariff if sub_scenario.custom_tariff else base_scenario.base_tariff
+    
+    sub_kwh = sub_df['final_grid_load_kw'].clip(lower=0.0).sum() / factor
+    sub_peak = sub_df['final_grid_load_kw'].max()
+    sub_export = sub_df.get('grid_feed_in_kw', pd.Series([0.0])).sum() / factor
+    
+    sub_grid_bill = (
+        sub_tariff.fixed_costs_per_year +
+        (sub_kwh * sub_tariff.price_per_kwh) +
+        (sub_peak * sub_tariff.price_per_kw_peak) -
+        (sub_export * fit)
+    )
+    
+    # Backup generator costs
+    annual_fuel_l = sub_df.get('generator_fuel_l', pd.Series([0.0])).sum()
+    fuel_cost_yr1 = annual_fuel_l * diesel_price
+    
+    gen_params = sub_scenario.tech_params.get('generator', {}) if sub_scenario.tech_params else {}
+    gen_rent = float(gen_params.get('capex_per_year', 0.0))
+    gen_maint_hr = float(gen_params.get('opex_per_hour', 0.0))
+    
+    gen_action = sub_df.get('generator_action_kw', pd.Series([0.0]))
+    run_hours = (gen_action > 0.1).sum()
+    gen_maint_yr1 = run_hours * gen_maint_hr
+    
+    grid_savings_yr1 = base_grid_bill - sub_grid_bill
+    
+    # Lifespan cashflow simulation
     jahre = list(range(lifespan + 1))
-    df = pd.DataFrame({"Jahr": jahre})
+    df = pd.DataFrame({"Year": jahre})
     
-    # ==========================================
-    # 2. CAPEX (Hardware-Kauf im Jahr 0)
-    # ==========================================
-    df["Investition_Capex"] = 0.0
-    df.loc[df["Jahr"] == 0, "Investition_Capex"] = -fin.capex
+    df["CAPEX (€)"] = 0.0
+    df.loc[df["Year"] == 0, "CAPEX (€)"] = -fin.capex * capex_mult
     
-    # ==========================================
-    # 3. OPEX (Laufende Wartung ab Jahr 1)
-    # ==========================================
-    # Die Wartung steigt jedes Jahr um die allgemeine Inflationsrate
-    opex_liste = [0.0] # Jahr 0 hat keine Wartung
-    for jahr in range(1, lifespan + 1):
-        # OPEX = Basiswert * (1 + Inflation)^Jahr
-        laufende_kosten = fin.opex_yearly * ((1 + fin.inflation_rate) ** jahr)
-        opex_liste.append(-laufende_kosten)
-        
-    df["Wartung_Opex"] = opex_liste
+    # Unpack BESS details for replacement moment capex
+    bess_params = sub_scenario.tech_params.get('battery', {}) if sub_scenario.tech_params else {}
+    rep_year = bess_params.get('replacement_year', 10) if bess_params else 10
+    rep_pct = bess_params.get('replacement_pct', 100.0) / 100.0 if bess_params else 1.0
+    rep_cost_base = bess_params.get('total_storage_capex', 0.0) * rep_pct * capex_mult if bess_params else 0.0
     
-    # ==========================================
-    # 4. DIE NETZKOSTEN & ERSPARNISSE (Platzhalter für Tarif-Logik)
-    # ==========================================
-    # HIER kommt später die Verknüpfung zu deiner tarrif_calc.py rein.
-    # Für den Anfang tun wir so, als ob das System jedes Jahr fiktiv 
-    # 25.000 € an Strafen einspart (wachsend mit der Energiepreissteigerung).
-    
+    opex_liste = [0.0]
     ersparnis_liste = [0.0]
-    basis_ersparnis_pro_jahr = 25000.0 # TODO: Durch echte Tarif-Ersparnis ersetzen
+    fuel_liste = [0.0]
+    miete_liste = [0.0]
+    maintenance_liste = [0.0]
+    capex_replacements = [0.0]
     
     for jahr in range(1, lifespan + 1):
-        ersparnis = basis_ersparnis_pro_jahr * ((1 + fin.energy_price_growth) ** jahr)
-        ersparnis_liste.append(ersparnis)
+        infl_multiplier = (1.0 + inflation_rate) ** (jahr - 1)
+        grid_multiplier = (1.0 + energy_esc) ** (jahr - 1)
+        fuel_multiplier = (1.0 + diesel_esc) ** (jahr - 1)
         
-    df["Eingesparte_Netzkosten"] = ersparnis_liste
+        # Solar PV degradation rate (compounding annual loss)
+        sol_deg = float(sub_scenario.tech_params.get('solar', {}).get('degradation_pct', 0.5)) / 100.0 if (sub_scenario.tech_params and 'solar' in sub_scenario.tech_params) else 0.005
+        deg_multiplier = (1.0 - sol_deg) ** (jahr - 1)
+        
+        opex_y = fin.opex_yearly * capex_mult * infl_multiplier
+        sav_y = grid_savings_yr1 * grid_multiplier * deg_multiplier
+        fuel_y = fuel_cost_yr1 * fuel_multiplier
+        rent_y = gen_rent * infl_multiplier
+        maint_y = gen_maint_yr1 * infl_multiplier
+        
+        rep_y = 0.0
+        if jahr == rep_year:
+            rep_y = rep_cost_base * infl_multiplier
+            
+        opex_liste.append(-opex_y)
+        ersparnis_liste.append(sav_y)
+        fuel_liste.append(-fuel_y)
+        miete_liste.append(-rent_y)
+        maintenance_liste.append(-maint_y)
+        capex_replacements.append(-rep_y)
+        
+    df["OPEX (€)"] = opex_liste
+    df["Grid Savings (€)"] = ersparnis_liste
+    df["Generator Fuel (€)"] = fuel_liste
+    df["Generator Rental (€)"] = miete_liste
+    df["Generator Maintenance (€)"] = maintenance_liste
     
-    # ==========================================
-    # 5. CASHFLOW & AMORTISATION BERECHNEN
-    # ==========================================
-    # Was bleibt am Ende des Jahres auf dem Konto?
-    df["Netto_Cashflow"] = df["Investition_Capex"] + df["Wartung_Opex"] + df["Eingesparte_Netzkosten"]
+    df["CAPEX (€)"] = df["CAPEX (€)"] + capex_replacements
     
-    # Der Kontostand über die Jahre (Kumuliert)
-    # Hieran sehen wir später, ab wann die Linie über Null geht (Break-Even!)
-    df["Kumulierter_Cashflow"] = df["Netto_Cashflow"].cumsum()
+    df["Net Cashflow (€)"] = (
+        df["CAPEX (€)"] + 
+        df["OPEX (€)"] + 
+        df["Grid Savings (€)"] + 
+        df["Generator Fuel (€)"] +
+        df["Generator Rental (€)"] +
+        df["Generator Maintenance (€)"]
+    )
+    df["Cumulative Cashflow (€)"] = df["Net Cashflow (€)"].cumsum()
+    df["Present Value (€)"] = df["Net Cashflow (€)"] / ((1.0 + discount_rate) ** df["Year"])
+    df["Cumulative NPV (€)"] = df["Present Value (€)"].cumsum()
     
     return df
 
 def get_payback_year(cashflow_df: pd.DataFrame) -> float:
-    """Sucht das Jahr, in dem der kumulierte Cashflow positiv wird (Break-Even)."""
+    """Searches for the first year where cumulative cashflow turns positive (break-even)."""
     if cashflow_df is None:
         return None
-        
-    gewinn_jahre = cashflow_df[cashflow_df["Kumulierter_Cashflow"] > 0]
-    
+    gewinn_jahre = cashflow_df[cashflow_df["Cumulative Cashflow (€)"] > 0]
     if gewinn_jahre.empty:
-        return -1.0 # Bedeutet: System amortisiert sich innerhalb von 15 Jahren NIE!
-        
-    return gewinn_jahre["Jahr"].iloc[0] # Gibt das erste Jahr im Plus zurück
+        return -1.0
+    return gewinn_jahre["Year"].iloc[0]

@@ -51,7 +51,7 @@ def compile_plotly_load_chart(selected_profiles, get_df_for_name, custom_colors,
     fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor='lightgray')
     fig.update_yaxes(showgrid=True, gridwidth=0.5, gridcolor='lightgray')
     
-    img_bytes = fig.write_image(format="png", engine="kaleido")
+    img_bytes = fig.to_image(format="png", engine="kaleido")
     return io.BytesIO(img_bytes)
 
 def compile_plotly_soc_chart(selected_profiles, get_df_for_name, linked_subs, custom_colors):
@@ -90,7 +90,7 @@ def compile_plotly_soc_chart(selected_profiles, get_df_for_name, linked_subs, cu
     fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor='lightgray')
     fig.update_yaxes(showgrid=True, gridwidth=0.5, gridcolor='lightgray')
     
-    img_bytes = fig.write_image(format="png", engine="kaleido")
+    img_bytes = fig.to_image(format="png", engine="kaleido")
     return io.BytesIO(img_bytes)
 
 def compile_plotly_cashflow_chart(selected_profiles, base_scenario, linked_subs, custom_colors):
@@ -105,8 +105,8 @@ def compile_plotly_cashflow_chart(selected_profiles, base_scenario, linked_subs,
             df_cashflow = generate_15_year_cashflow(sub, base_scenario)
             color = custom_colors.get(name, '#1f77b4')
             fig.add_trace(go.Scatter(
-                x=df_cashflow["Jahr"],
-                y=df_cashflow["Kumulierter_Cashflow"],
+                x=df_cashflow["Year"],
+                y=df_cashflow["Cumulative Cashflow (€)"],
                 mode='lines+markers',
                 line=dict(color=color, width=1.5),
                 marker=dict(size=5),
@@ -130,7 +130,7 @@ def compile_plotly_cashflow_chart(selected_profiles, base_scenario, linked_subs,
     fig.update_xaxes(showgrid=True, gridwidth=0.5, gridcolor='lightgray')
     fig.update_yaxes(showgrid=True, gridwidth=0.5, gridcolor='lightgray')
     
-    img_bytes = fig.write_image(format="png", engine="kaleido")
+    img_bytes = fig.to_image(format="png", engine="kaleido")
     return io.BytesIO(img_bytes)
 
 def merge_with_template(overlay_buffer, template_path):
@@ -361,7 +361,7 @@ def render_comparison_pdf_downloader(base_scenario, selected_profiles, linked_su
         col_inputs, col_preview = st.columns([1, 1], gap="medium")
         
         with col_inputs:
-            st.markdown("#### ⚙️ Exporter Settings")
+            st.markdown("#### Exporter Settings")
             col1, col2 = st.columns(2)
             rep_title = col1.text_input("Report Title:", value="Energy System Optimization Report", key="pdf_rep_title")
             rep_client = col2.text_input("Client / Project Reference:", value=base_scenario.name, key="pdf_rep_client")
@@ -388,7 +388,7 @@ def render_comparison_pdf_downloader(base_scenario, selected_profiles, linked_su
             update_preview = st.button("🔄 Update Live Preview", type="primary", use_container_width=True, key="pdf_btn_compile")
             
         with col_preview:
-            st.markdown("#### 👁️ PDF Live View")
+            st.markdown("#### PDF Live View")
             
             if update_preview:
                 with st.spinner("Generating Plotly charts & compiling PDF layout..."):
@@ -420,4 +420,4 @@ def render_comparison_pdf_downloader(base_scenario, selected_profiles, linked_su
                     key="pdf_btn_download"
                 )
             else:
-                st.info("💡 Click **'Update Live Preview'** on the left to compile and display the PDF report preview here before downloading.")
+                st.info("Click **'Update Live Preview'** on the left to compile and display the PDF report preview here before downloading.")

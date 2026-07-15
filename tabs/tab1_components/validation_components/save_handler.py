@@ -14,9 +14,10 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
     st.divider()
     st.write(f"### 💾 Save {data_source} Scenario")
     
-    fin_meta = st.session_state.get('current_financial_metadata', {})
-    render_financial_projection(df, fin_meta)
-    st.write("---")
+    if st.session_state.get('enable_financials', False):
+        fin_meta = st.session_state.get('current_financial_metadata', {})
+        render_financial_projection(df, fin_meta)
+        st.write("---")
     
     # 1. Base Naming Suggestion
     default_scen_name = st.session_state.get('active_scenario_name', f"Scenario_{data_source}")
@@ -40,18 +41,18 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
     # 2. Hierarchical Stammbaum Architecture 
     col_type, col_parent = st.columns(2)
     with col_type:
-        save_type = st.radio("Szenario-Typ:", options=["Haupt-Szenario (Basis)", "Sub-Szenario (Variante)"], horizontal=True, key=f"save_type_{active_scenario}")
+        save_type = st.radio("Scenario Type:", options=["Base Scenario", "Sub-Scenario"], horizontal=True, key=f"save_type_{active_scenario}")
         
     parent_scen = None
     with col_parent:
-        if save_type == "Sub-Szenario (Variante)":
+        if save_type == "Sub-Scenario":
             if existing_scenarios:
                 suggested_parent = st.session_state.get('last_loaded_registry_name')
                 default_idx = existing_scenarios.index(suggested_parent) if suggested_parent in existing_scenarios else 0
-                parent_scen = st.selectbox("Gehört zu Basis-Szenario:", options=existing_scenarios, index=default_idx, key=f"parent_select_{active_scenario}")
+                parent_scen = st.selectbox("Belongs to Base Scenario:", options=existing_scenarios, index=default_idx, key=f"parent_select_{active_scenario}")
             else:
-                st.warning("Keine Basis-Szenarien im Tresor. Wird als Haupt-Szenario gespeichert.")
-                save_type = "Haupt-Szenario (Basis)"
+                st.warning("No base scenarios in the vault. Saving as Base Scenario.")
+                save_type = "Base Scenario"
 
     # 3. Execution Pipeline (mit disabled=save_disabled)
     if st.button(f"🚀 Securely Save Profile & Continue", type="primary", use_container_width=True, disabled=save_disabled, key=f"save_btn_uni_{active_scenario}"):
@@ -80,7 +81,7 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
         active_project = st.session_state.get('active_project_name')
         
         if active_project:
-            if save_type == "Haupt-Szenario (Basis)":
+            if save_type == "Base Scenario":
                 # Ensure the base scenario exists in storage
                 base_obj = get_base_scenario(scenario_name)
                 if not base_obj:
@@ -100,7 +101,7 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
                 base_obj.metadata = params
                 base_obj.metadata['financial_metadata'] = fin_meta
                 
-            elif save_type == "Sub-Szenario (Variante)" and parent_scen:
+            elif save_type == "Sub-Scenario" and parent_scen:
                 # Retrieve the parent base scenario
                 parent_obj = get_base_scenario(parent_scen)
                 if parent_obj:
@@ -148,7 +149,7 @@ def render_save_handler(df: pd.DataFrame, params: dict, active_scenario: str, st
         if data_source == "CSV":
             st.session_state[f"csv_mapping_ready_{active_scenario}"] = False
             
-        st.success(f"✅ Szenario '{scenario_name}' erfolgreich im Tresor gesichert! Du kannst nun fortfahren.")
+        st.success(f"Scenario '{scenario_name}' successfully saved in the vault! You can proceed now.")
         st.rerun()
 
 def save_profile_to_vault(vault, active_baseline, df, final_params, grid_limit):

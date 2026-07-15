@@ -8,13 +8,13 @@ def get_season(month: int, country: str) -> str:
     """Returns the season based on hemisphere (Argentina is Southern Hemisphere)."""
     is_south = "Argentina" in country
     if month in [12, 1, 2]:
-        return "Summer ☀️" if is_south else "Winter ❄️"
+        return "Summer" if is_south else "Winter"
     elif month in [3, 4, 5]:
-        return "Autumn 🍂" if is_south else "Spring 🌸"
+        return "Autumn" if is_south else "Spring"
     elif month in [6, 7, 8]:
-        return "Winter ❄️" if is_south else "Summer ☀️"
+        return "Winter" if is_south else "Summer"
     else:
-        return "Spring 🌸" if is_south else "Autumn 🍂"
+        return "Spring" if is_south else "Autumn"
 
 def render_demo_results(
     results: pd.DataFrame, 
@@ -29,7 +29,7 @@ def render_demo_results(
     Renders the metrics, charts, and export options for Demo Mode.
     Supports both pure Solar Yield simulations and full load-shaving Mini-Scenarios.
     """
-    st.write("### 📊 Simulation Results & Analytics")
+    st.write("### Simulation Results & Analytics")
     
     # 1-hour intervals, so res = 60
     res_factor = 1.0 # 60 / 60 min = 1 hour
@@ -55,7 +55,7 @@ def render_demo_results(
         m2.metric("Peak Power Output", f"{peak_power_kw:,.1f} kW", help="The absolute maximum power output recorded.")
         m3.metric("Capacity Factor", f"{capacity_factor:.1f} %", help="Ratio of actual output over a year to potential output at full capacity.")
         
-        tab_ts, tab_month, tab_season = st.tabs(["📈 Time Series", "📊 Monthly Yield", "📅 Seasonal Profiles"])
+        tab_ts, tab_month, tab_season = st.tabs(["Time Series", "Monthly Yield", "Seasonal Profiles"])
         
         with tab_ts:
             st.write("**Hourly Yield Profile**")
@@ -113,8 +113,8 @@ def render_demo_results(
             seasonal_avg = results_copy.groupby(['season', 'time_of_day'])['solar_gen_kw'].mean().reset_index()
             seasonal_avg['time_str'] = seasonal_avg['time_of_day'].apply(lambda t: t.strftime('%H:%M'))
             
-            season_order = ["Spring 🌸", "Summer ☀️", "Autumn 🍂", "Winter ❄️"]
-            season_colors = {"Spring 🌸": "#4CAF50", "Summer ☀️": "#FFC107", "Autumn 🍂": "#FF9800", "Winter ❄️": "#2196F3"}
+            season_order = ["Spring", "Summer", "Autumn", "Winter"]
+            season_colors = {"Spring": "#4CAF50", "Summer": "#FFC107", "Autumn": "#FF9800", "Winter": "#2196F3"}
             
             fig_season = go.Figure()
             for season in season_order:
@@ -158,7 +158,7 @@ def render_demo_results(
         m2.metric("Optimized Grid Peak", f"{peak_new:,.1f} kW", help="Maximum grid demand after peak shaving / solar self-consumption.")
         m3.metric("Degree of Autarky", f"{autarky_pct:.1f} %", help="Percentage of energy covered by solar or battery output.")
 
-        tab_load, tab_assets, tab_solar_detail = st.tabs(["📈 Load Profile", "🔋 Storage & Assets", "🌞 Solar Details"])
+        tab_load, tab_assets, tab_solar_detail = st.tabs(["Load Profile", "Storage & Assets", "Solar Details"])
         
         with tab_load:
             st.write("**Hourly System Load Profile**")
@@ -211,7 +211,7 @@ def render_demo_results(
                 calendar_deg = 1.5
                 total_deg = max(cycle_deg, calendar_deg)
                 
-                st.markdown(f"#### 🔋 Storage Performance: {b_type}")
+                st.markdown(f"#### Storage Performance: {b_type}")
                 st.caption(f"Configuration: **{bat_params.get('num_batteries', 10)} modules** of **{bat_params.get('cap_per_module', 20.0):.1f} kWh** | SoC range: **{min_soc:.0f}% - {max_soc:.0f}%**")
                 
                 col_met1, col_met2, col_met3 = st.columns(3)
@@ -267,7 +267,7 @@ def render_demo_results(
                     fig_soc.update_layout(height=300, margin=dict(t=10, b=10, l=10, r=10))
                     st.plotly_chart(fig_soc, use_container_width=True)
             else:
-                st.info("🔋 No battery integrated. Check 'Integrate Battery (BESS)' on the left to simulate storage action.")
+                st.info("No battery integrated. Check 'Integrate Battery (BESS)' on the left to simulate storage action.")
                 
         with tab_solar_detail:
             if is_solar_active:
@@ -278,7 +278,7 @@ def render_demo_results(
                 
                 loss_sum = sol_params.get("loss_inverter", 3.0) + sol_params.get("loss_cabling", 1.5) + sol_params.get("loss_soiling", 1.0) + sol_params.get("loss_other", 2.0)
                 
-                st.markdown(f"#### ☀️ Solar Plant Details: {panel_type}")
+                st.markdown(f"#### Solar Plant Details: {panel_type}")
                 st.caption(f"Radiation Source: **{ghi_source}** | Yield Factor: **{yield_factor:.2f}** | Total Technical Losses: **{loss_sum:.1f}%**")
                 
                 col_sol_met1, col_sol_met2, col_sol_met3 = st.columns(3)
@@ -319,8 +319,8 @@ def render_demo_results(
                     seasonal_avg['time_str'] = seasonal_avg['time_of_day'].apply(lambda t: t.strftime('%H:%M'))
                     
                     fig_season = go.Figure()
-                    season_order = ["Spring 🌸", "Summer ☀️", "Autumn 🍂", "Winter ❄️"]
-                    season_colors = {"Spring 🌸": "#4CAF50", "Summer ☀️": "#FFC107", "Autumn 🍂": "#FF9800", "Winter ❄️": "#2196F3"}
+                    season_order = ["Spring", "Summer", "Autumn", "Winter"]
+                    season_colors = {"Spring": "#4CAF50", "Summer": "#FFC107", "Autumn": "#FF9800", "Winter": "#2196F3"}
                     
                     for season in season_order:
                         season_data = seasonal_avg[seasonal_avg['season'] == season].sort_values('time_of_day')
@@ -343,7 +343,7 @@ def render_demo_results(
                     fig_month.update_layout(height=250, margin=dict(t=10, b=10, l=10, r=10))
                     st.plotly_chart(fig_month, use_container_width=True)
             else:
-                st.info("☀️ No solar PV integrated. Configure Panel counts in 'Solar PV Setup' to see weather analytics.")
+                st.info("No solar PV integrated. Configure Panel counts in 'Solar PV Setup' to see weather analytics.")
 
     # Export CSV Section
     st.divider()

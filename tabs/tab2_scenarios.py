@@ -69,7 +69,7 @@ def render_tab2_scenarios():
         return
 
     base_names = [b.name for b in bases]
-    selected_base_name = st.selectbox("### 📂 1. Select Project (Baseline)", base_names)
+    selected_base_name = st.selectbox("### 1. Select Project (Baseline)", base_names)
     active_base = get_base_scenario(selected_base_name)
 
     if active_base.original_profile is None:
@@ -103,10 +103,10 @@ def render_tab2_scenarios():
             default_solar, default_battery, default_generator, default_grid = False, True, False, False
 
         # Independent Checkboxes for Dynamic Combinations
-        enable_solar = st.checkbox("☀️ Integrate Solar PV", value=default_solar)
-        enable_battery = st.checkbox("🔋 Integrate Battery (BESS)", value=default_battery)
-        enable_generator = st.checkbox("🛢️ Integrate Backup Generator", value=default_generator)
-        enable_grid = st.checkbox("⚡ Change Grid Tariff / Upgrade Connection", value=default_grid)
+        enable_solar = st.checkbox("Integrate Solar PV", value=default_solar)
+        enable_battery = st.checkbox("Integrate Battery (BESS)", value=default_battery)
+        enable_generator = st.checkbox("Integrate Backup Generator", value=default_generator)
+        enable_grid = st.checkbox("Change Grid Tariff / Upgrade Connection", value=default_grid)
 
         # Dynamic contract mode selections outside the form for reactive updates
         sub_contract_mode = "Generic AC Connection Tier"
@@ -116,7 +116,7 @@ def render_tab2_scenarios():
 
         if enable_grid:
             st.write("---")
-            st.write("#### 🔌 Connection Change Settings")
+            st.write("#### Connection Change Settings")
             sub_contract_mode = st.selectbox(
                 "New Connection / Contract Mode:",
                 [
@@ -186,7 +186,7 @@ def render_tab2_scenarios():
 
         # Calculation Resolution Toggle
         st.write("---")
-        st.write("#### ⏱️ Calculation Resolution")
+        st.write("#### Calculation Resolution")
         calc_res = st.radio(
             "Select Resolution:",
             ["Hourly (Fast / Schnell)", "15-Minute (High Accuracy / Genau)"],
@@ -371,7 +371,7 @@ def render_tab2_scenarios():
 
     # --- 3. SUB-SCENARIOS LISTING & RELOADING ---
     st.divider()
-    st.write("### 📋 3. Created Variants & Saved Sub-Scenarios")
+    st.write("### 3. Created Variants & Saved Sub-Scenarios")
     
     if not active_base.sub_scenarios:
         st.info("No sub-scenario variants created yet. Configure and save one above.")
@@ -380,18 +380,18 @@ def render_tab2_scenarios():
         for idx, sub in enumerate(active_base.sub_scenarios):
             with cols_sub[idx % 3]:
                 with st.container(border=True):
-                    st.markdown(f"##### 🌿 {sub.name}")
+                    st.markdown(f"##### {sub.name}")
                     
                     details = []
-                    if sub.solar_kwp > 0: details.append(f"☀️ Solar: {sub.solar_kwp:.1f} kWp")
-                    if sub.battery_kwh > 0: details.append(f"🔋 BESS: {sub.battery_kwh:.1f} kWh / {sub.battery_kw:.1f} kW")
-                    if sub.custom_tariff: details.append(f"🔌 Tariff: {sub.custom_tariff.name} ({sub.custom_tariff.contracted_capacity_kw:.1f} kW)")
-                    else: details.append(f"🔌 Tariff: Baseline Limit ({grid_limit:.1f} kW)")
+                    if sub.solar_kwp > 0: details.append(f"Solar: {sub.solar_kwp:.1f} kWp")
+                    if sub.battery_kwh > 0: details.append(f"BESS: {sub.battery_kwh:.1f} kWh / {sub.battery_kw:.1f} kW")
+                    if sub.custom_tariff: details.append(f"Tariff: {sub.custom_tariff.name} ({sub.custom_tariff.contracted_capacity_kw:.1f} kW)")
+                    else: details.append(f"Tariff: Baseline Limit ({grid_limit:.1f} kW)")
                     
                     st.write(", ".join(details))
                     
                     c_btn1, c_btn2 = st.columns(2)
-                    if c_btn1.button("✏️ Reload", key=f"reload_sub_{sub.id}", use_container_width=True):
+                    if c_btn1.button("↻ Reload", key=f"reload_sub_{sub.id}", use_container_width=True):
                         # 1. Resolve tech parameters (supporting both new tech_params format and legacy formats)
                         loaded_params = sub.tech_params if (hasattr(sub, 'tech_params') and sub.tech_params is not None) else {
                             'solar': {'installed_kwp': sub.solar_kwp, 'panel_count': int(sub.solar_kwp * 1000 / 420), 'panel_wp': 420} if sub.solar_kwp > 0 else {},
@@ -421,31 +421,56 @@ def render_tab2_scenarios():
                             st.session_state[f"sol_therm_{p_id}_sol"] = bool(s.get('thermal_loss', True))
                             st.session_state[f"sol_az_{p_id}_sol"] = s.get('azimuth', "South (180°)")
                             st.session_state[f"sol_tilt_{p_id}_sol"] = s.get('tilt', "30°")
+                            st.session_state[f"sol_panel_type_{p_id}_sol"] = s.get('panel_type', "Monocrystalline Silicon")
+                            st.session_state[f"sol_ghi_source_{p_id}_sol"] = s.get('ghi_source', "Open-Meteo API")
+                            st.session_state[f"sol_specific_yield_{p_id}_sol"] = float(s.get('specific_yield', 950.0))
+                            st.session_state[f"sol_sun_hours_{p_id}_sol"] = float(s.get('annual_sunshine_hours', 1500.0))
+                            st.session_state[f"sol_yield_factor_{p_id}_sol"] = float(s.get('yield_factor', 1.0))
+                            st.session_state[f"sol_loss_inv_{p_id}_sol"] = float(s.get('loss_inverter', 3.0))
+                            st.session_state[f"sol_loss_cab_{p_id}_sol"] = float(s.get('loss_cabling', 1.5))
+                            st.session_state[f"sol_loss_soil_{p_id}_sol"] = float(s.get('loss_soiling', 1.0))
+                            st.session_state[f"sol_loss_oth_{p_id}_sol"] = float(s.get('loss_other', 2.0))
+                            st.session_state[f"sol_temp_coeff_{p_id}_sol"] = float(s.get('temp_coeff', 0.25))
                             st.session_state[f"sol_capex_{p_id}_sol"] = float(s.get('capex_per_kwp', 850.0))
                             st.session_state[f"sol_opex_{p_id}_sol"] = float(s.get('opex_pct', 1.0))
                             st.session_state[f"sol_deg_{p_id}_sol"] = float(s.get('degradation_pct', 0.5))
                             
                         if 'battery' in loaded_params and loaded_params['battery']:
                             b = loaded_params['battery']
-                            st.session_state[f"bat_cap_{p_id}_bat"] = float(b.get('b_cap', 200.0))
+                            num_bats = int(b.get('num_batteries', 10))
+                            st.session_state[f"bat_num_{p_id}_bat"] = num_bats
+                            st.session_state[f"bat_mod_cap_{p_id}_bat"] = float(b.get('cap_per_module', float(b.get('b_cap', 200.0)) / num_bats))
                             st.session_state[f"bat_pwr_{p_id}_bat"] = float(b.get('b_pwr', 100.0))
                             st.session_state[f"bat_thresh_{p_id}_bat"] = float(b.get('shaving_threshold', grid_limit))
                             st.session_state[f"bat_chg_lim_{p_id}_bat"] = int(b.get('charge_pwr_limit', 30))
-                            st.session_state[f"bat_start_{p_id}_bat"] = int(b.get('charge_start_hour', 0))
-                            st.session_state[f"bat_end_{p_id}_bat"] = int(b.get('charge_end_hour', 6))
+                            st.session_state[f"bat_chg_start_{p_id}_bat"] = int(b.get('charge_start_hour', 22))
+                            st.session_state[f"bat_chg_end_{p_id}_bat"] = int(b.get('charge_end_hour', 6))
                             st.session_state[f"bat_green_{p_id}_bat"] = bool(b.get('green_charging', False))
-                            st.session_state[f"bat_capex_{p_id}_bat"] = float(b.get('capex_per_kwh', 450.0))
+                            st.session_state[f"bat_eff_{p_id}_bat"] = int(b.get('efficiency', 92))
+                            st.session_state[f"bat_soc_init_{p_id}_bat"] = int(b.get('initial_soc_pct', 50))
+                            st.session_state[f"bat_type_{p_id}_bat"] = b.get('battery_type', "LFP (Lithium Iron Phosphate)")
+                            st.session_state[f"bat_min_soc_{p_id}_bat"] = int(b.get('min_soc_pct', 10))
+                            st.session_state[f"bat_max_soc_{p_id}_bat"] = int(b.get('max_soc_pct', 90))
+                            st.session_state[f"bat_cycle_life_{p_id}_bat"] = int(b.get('cycle_life', 6000))
+                            st.session_state[f"bat_temp_cap_coeff_{p_id}_bat"] = float(b.get('temp_cap_coeff', 0.5))
+                            st.session_state[f"bat_capex_kwh_{p_id}_bat"] = float(b.get('capex_per_kwh', 400.0))
+                            st.session_state[f"bat_capex_kw_{p_id}_bat"] = float(b.get('capex_per_kw', 150.0))
                             st.session_state[f"bat_opex_{p_id}_bat"] = float(b.get('opex_pct', 1.5))
+                            st.session_state[f"bat_deg_{p_id}_bat"] = float(b.get('degradation_pct', 1.5))
+                            st.session_state[f"bat_rep_yr_{p_id}_bat"] = int(b.get('replacement_year', 10))
+                            st.session_state[f"bat_rep_pct_{p_id}_bat"] = float(b.get('replacement_pct', 100.0))
                             
                         if 'generator' in loaded_params and loaded_params['generator']:
                             g = loaded_params['generator']
                             st.session_state[f"gen_pwr_{p_id}_gen"] = float(g.get('gen_pwr', 250.0))
                             st.session_state[f"gen_fuel_{p_id}_gen"] = float(g.get('fuel_l_per_kwh', 0.28))
+                            st.session_state[f"gen_capex_{p_id}_gen"] = float(g.get('capex_per_year', 0.0))
+                            st.session_state[f"gen_opex_hr_{p_id}_gen"] = float(g.get('opex_per_hour', 0.0))
                             
                         st.success(f"Config and diagrams for '{sub.name}' successfully restored!")
                         st.rerun()
                         
-                    if c_btn2.button("🗑️ Delete", key=f"del_sub_{sub.id}", use_container_width=True):
+                    if c_btn2.button("Delete", key=f"del_sub_{sub.id}", use_container_width=True):
                         active_base.sub_scenarios = [s for s in active_base.sub_scenarios if s.id != sub.id]
                         st.success(f"Deleted variant '{sub.name}'")
                         st.rerun()

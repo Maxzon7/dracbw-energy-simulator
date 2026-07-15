@@ -60,7 +60,7 @@ def render_demo_solar_ui() -> dict:
         )
 
     # Advanced configurations under expander to prevent cluttering simple mode
-    with st.expander("⚙️ Advanced Solar Parameters & Overrides", expanded=False):
+    with st.expander("Advanced Solar Parameters & Overrides", expanded=False):
         panel_type = st.selectbox(
             "Panel Type / Chemistry",
             ["Monocrystalline Silicon", "Polycrystalline Silicon", "Thin-Film / CdTe"],

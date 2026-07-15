@@ -69,13 +69,28 @@ def render_performance_matrix(results: pd.DataFrame, baseline_df: pd.DataFrame, 
         if has_battery:
             min_reqs = get_exact_minimum_requirements(baseline_df, grid_limit, res)
             throughput_kwh = results['battery_action_kw'].abs().sum() / (60 / res)
-            b_cap = current_params.get('battery', current_params).get('b_cap', 0) if isinstance(current_params, dict) else 0
             
-            cycles = (throughput_kwh / 2.0) / b_cap if b_cap > 0 else 0
-            deg_pct = (cycles / 5000) * 100.0 
+            # Extract BESS parameters
+            bat_p = current_params.get('battery', {}) if isinstance(current_params, dict) else {}
+            b_cap = float(bat_p.get('b_cap', 200.0))
+            min_soc = float(bat_p.get('min_soc_pct', 10.0))
+            max_soc = float(bat_p.get('max_soc_pct', 90.0))
+            cycle_life = float(bat_p.get('cycle_life', 6000.0))
+            b_type = bat_p.get('battery_type', "LFP")
+            if "LFP" in b_type: b_type_label = "LFP"
+            elif "NMC" in b_type: b_type_label = "NMC"
+            elif "Lead" in b_type: b_type_label = "Lead"
+            else: b_type_label = "Flow"
             
-            st.metric("Battery Cycles", f"{cycles:.0f} Cycles")
-            st.metric("Est. Degradation (1 Yr)", f"-{deg_pct:.2f} %", delta_color="inverse")
+            usable_capacity_kwh = b_cap * (max_soc - min_soc) / 100.0
+            cycles = (throughput_kwh / 2.0) / usable_capacity_kwh if usable_capacity_kwh > 0 else 0.0
+            
+            cycle_deg = (cycles / cycle_life) * 100.0 if cycle_life > 0.0 else 0.0
+            total_deg = max(cycle_deg, 1.5)
+            
+            st.metric("Battery Chemistry", b_type_label)
+            st.metric(f"Cycles ({res}m sim)", f"{cycles:.1f} Cycles")
+            st.metric("Est. Degradation (1 Yr)", f"-{total_deg:.2f} %", delta_color="inverse")
             st.metric("Req. Capacity (Ideal)", f"{min_reqs['true_min_capacity_kwh']:.1f} kWh")
         else:
             st.metric("Battery Cycles", "N/A")

@@ -61,7 +61,7 @@ def render_demo_mode():
     Renders inputs, controls simulation state, and triggers results visualization.
     Calculations run in 1-hour intervals for optimal performance.
     """
-    st.markdown("## 🧪 Demo Mode: Instant Scenario Simulator")
+    st.markdown("## Demo Mode: Instant Scenario Simulator")
     st.write(
         "Throw together a custom energy scenario in seconds! "
         "Select your technologies, adjust limits, and visualize the output in real-time. "
@@ -97,7 +97,7 @@ def render_demo_mode():
         
         # 2. Consumption Settings
         with st.container(border=True):
-            st.write("### 📈 Consumption & Grid")
+            st.write("### Consumption & Grid")
             has_consumption = st.checkbox("Add Baseline Consumption Profile", value=st.session_state["demo_has_consumption"])
             
             if has_consumption:
@@ -116,7 +116,7 @@ def render_demo_mode():
         
         # 3. Solar PV Setup
         with st.container(border=True):
-            st.write("### ☀️ Solar Integration")
+            st.write("### Solar Integration")
             has_solar = st.checkbox("Integrate Solar PV", value=(st.session_state["demo_installed_kwp"] > 0.0 or not has_consumption))
             if has_solar:
                 sol_params = render_demo_solar_ui()
@@ -129,7 +129,7 @@ def render_demo_mode():
         
         # 4. Battery Storage (Only if Consumption is active)
         with st.container(border=True):
-            st.write("### 🔋 Battery Storage (BESS)")
+            st.write("### Battery Storage (BESS)")
             if has_consumption:
                 has_battery = st.checkbox("Integrate Battery (BESS)", value=st.session_state["demo_has_battery"])
                 if has_battery:
@@ -142,7 +142,7 @@ def render_demo_mode():
                     b_pwr = st.number_input("Max Inverter Power (kW)", min_value=5.0, value=100.0, step=5.0)
                     chg_pwr = st.slider("Max Recharge Speed (kW)", 5, 200, 30)
                     
-                    with st.expander("⚙️ Advanced Battery Parameters", expanded=False):
+                    with st.expander("Advanced Battery Parameters", expanded=False):
                         b_type = st.selectbox(
                             "Battery Type / Chemistry",
                             ["LFP (Lithium Iron Phosphate)", "NMC (Lithium Nickel Manganese Cobalt)", "Lead-Acid", "Flow Battery"],
@@ -196,7 +196,7 @@ def render_demo_mode():
         
         # 5. Generator Setup (Only if Consumption is active)
         with st.container(border=True):
-            st.write("### 🛢️ Backup Generator")
+            st.write("### Backup Generator")
             if has_consumption:
                 has_generator = st.checkbox("Integrate Backup Generator", value=st.session_state["demo_has_generator"])
                 if has_generator:
@@ -215,7 +215,7 @@ def render_demo_mode():
 
         st.write("<br>", unsafe_allow_html=True)
         
-        calc_button = st.button("🚀 Calculate Scenario", type="primary", use_container_width=True)
+        calc_button = st.button("Calculate Scenario", type="primary", use_container_width=True)
 
     with col_results:
         if calc_button:
@@ -291,7 +291,7 @@ def render_demo_mode():
                     st.session_state["demo_bat_params"] = bat_params
                     st.session_state["demo_sol_params"] = sol_params
                     
-                    st.success("🎉 Scenario calculated successfully!")
+                    st.success("Scenario calculated successfully!")
                 except Exception as sim_err:
                     st.error(f"Simulation failed: {sim_err}")
 
@@ -308,12 +308,12 @@ def render_demo_mode():
             )
         else:
             # Placeholder display
-            st.info("👈 Configure your location and active technologies on the left, then click **🚀 Calculate Scenario** to run the simulation.")
+            st.info("Configure your location and active technologies on the left, then click **Calculate Scenario** to run the simulation.")
             
             st.markdown(
                 """
                 <div style="background-color:rgba(0, 204, 150, 0.05); padding: 20px; border-radius: 10px; border: 1px solid rgba(0, 204, 150, 0.2); margin-top:20px;">
-                    <h4 style="color:#00CC96; margin-top:0;">⚡ Instant Prototyping Sandbox</h4>
+                    <h4 style="color:#00CC96; margin-top:0;">Instant Prototyping Sandbox</h4>
                     <p style="margin: 0 0 10px 0;">Use this sandbox to test configurations without setting up project folders, raw CSV ingestion, or contracts.</p>
                     <ul style="margin: 0; padding-left: 20px;">
                         <li><strong>Flexible Load Profiles:</strong> Generate a synthetic factory/office load instantly.</li>

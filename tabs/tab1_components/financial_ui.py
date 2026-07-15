@@ -144,8 +144,13 @@ def render_financial_inputs(working_fin: dict, include_financials: bool = True, 
         feed_in = c3.number_input("Feed-in Tariff (€/kWh)", value=feed_in, step=0.01)
         
         c4, c5, c6 = st.columns(3)
-        inflation = c4.number_input("Energy Inflation (%)", value=inflation, step=0.5)
+        inflation = c4.number_input("General Inflation (%)", value=inflation, step=0.5)
         diesel = c5.number_input("Diesel Price (€/L)", value=diesel, step=0.05)
+        lifespan_years = c6.number_input("Project Lifespan (Years)", value=int(working_fin.get('lifespan_years', 15)), min_value=1, max_value=25, step=1)
+        
+        c7, c8 = st.columns(2)
+        energy_price_growth = c7.number_input("Electricity Tariff Escalation (%/Yr)", value=float(working_fin.get('energy_price_growth', 4.0)), step=0.5)
+        diesel_price_growth = c8.number_input("Diesel Price Escalation (%/Yr)", value=float(working_fin.get('diesel_price_growth', 2.0)), step=0.5)
     else:
         st.markdown("##### 🔌 Connection Capacity Setup")
         if contract_mode == "Generic Grid Limit (No Contract)":
@@ -158,6 +163,9 @@ def render_financial_inputs(working_fin: dict, include_financials: bool = True, 
         
         # In non-financial mode, pricing is kept at 0 or preset values, but hidden from UI
         st.caption("Financial fields are hidden. You can enable them above.")
+        lifespan_years = 15
+        energy_price_growth = 4.0
+        diesel_price_growth = 2.0
 
     # We output the data so the form submit button can save it
     return {
@@ -173,6 +181,9 @@ def render_financial_inputs(working_fin: dict, include_financials: bool = True, 
         "feed_in_tariff": feed_in,
         "inflation": inflation,
         "diesel_price": diesel,
+        "lifespan_years": lifespan_years,
+        "energy_price_growth": energy_price_growth,
+        "diesel_price_growth": diesel_price_growth,
         "energy_charge": kwh_norm, # Legacy fallback
         "demand_charge": contract_price + (peak_price * 12) # Legacy fallback
     }

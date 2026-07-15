@@ -116,11 +116,14 @@ def render_tab1_baseline():
             "tariff_mode": "None (Consumption Only)"
         }
 
-    include_financials = st.toggle(
-        "💰 Include Financial Data in Evaluation?",
-        value=saved_params.get('include_financials', False),
-        key=f"inc_fin_{active_baseline_name}"
-    )
+    if st.session_state.get('enable_financials', False):
+        include_financials = st.toggle(
+            "Include Financial Data in Evaluation?",
+            value=saved_params.get('include_financials', False),
+            key=f"inc_fin_{active_baseline_name}"
+        )
+    else:
+        include_financials = False
 
     if 'current_financial_metadata' not in st.session_state:
         st.session_state['current_financial_metadata'] = {}

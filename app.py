@@ -19,10 +19,10 @@ def load_translations() -> dict:
 
 def render_workspace(t):
     active_name = st.session_state['active_project_name']
-    st.title(f"{t['title']} | 📂 Project: [{active_name}]")
+    st.title(f"{t['title']} | Project: [{active_name}]")
     
     tab0, tab1, tab2, tab3, tab4 = st.tabs([
-        "📊 Project Overview", "1️⃣ Baseline", "2️⃣ Scenarios", "3️⃣ Comparison", "⚙️ Data Management"
+        "Project Overview", "1. Baseline", "2. Scenarios", "3. Comparison", "Data Management"
     ])
     with tab0: render_tab0_overview()
     with tab1: render_tab1_baseline()
@@ -44,8 +44,8 @@ def main():
     st.set_page_config(page_title="Pro Energy Simulator", layout="wide", page_icon="⚡")
     init_session_states()
 
-    st.sidebar.title("⚙️ Global Settings")
-    languages = {"English 🇬🇧": "en", "Deutsch 🇩🇪": "de", "Español 🇪🇸": "es", "Nederlands 🇳🇱": "nl"}
+    st.sidebar.title("Global Settings")
+    languages = {"English": "en", "Deutsch": "de", "Español": "es", "Nederlands": "nl"}
     sel_lang = st.sidebar.selectbox("Language", list(languages.keys()), index=0)
     st.session_state['t'] = st.session_state['translations'].get(languages[sel_lang], st.session_state['translations']["en"])
     
@@ -63,7 +63,7 @@ def main():
         render_demo_mode()
     else:
         st.sidebar.markdown("---")
-        st.session_state['enable_financials'] = st.sidebar.toggle("💰 Enable Financial Evaluation", value=st.session_state['enable_financials'])
+        st.session_state['enable_financials'] = st.sidebar.toggle("Enable Financial Evaluation", value=st.session_state['enable_financials'])
         st.sidebar.markdown("<br><br>", unsafe_allow_html=True)
         
         # In app.py innerhalb der main() Verzweigung bei "Save & Close Project":
