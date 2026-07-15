@@ -110,11 +110,12 @@ def get_exact_minimum_requirements(df: pd.DataFrame, grid_limit_kw: float, inter
 
 def simulate_battery_logic(df: pd.DataFrame, grid_limit: float, b_params: dict, res: int = 15) -> pd.DataFrame:
     """
-    Simulates a highly precise physical quarter-hourly battery storage dispatch loop.
+    Simulates a highly precise physical battery storage dispatch loop.
+    Enforces min/max State of Charge (SoC) bounds and ambient temperature limits.
     """
     res_factor = 60 / res 
     
-    b_cap = b_params.get('b_cap', 200.0)
+    b_cap_nominal = b_params.get('b_cap', 200.0)
     b_pwr = b_params.get('b_pwr', 100.0)
     shaving_threshold = b_params.get('shaving_threshold', 120.0)
     charge_pwr_limit = b_params.get('charge_pwr_limit', 30.0)
@@ -122,29 +123,53 @@ def simulate_battery_logic(df: pd.DataFrame, grid_limit: float, b_params: dict, 
     end_hour = b_params.get('charge_end_hour', 6)
     green_charging = b_params.get('green_charging', False)
     
+    # State of Charge limits
+    min_soc_pct = b_params.get('min_soc_pct', 10.0)
+    max_soc_pct = b_params.get('max_soc_pct', 90.0)
+    initial_soc_pct = b_params.get('initial_soc_pct', 50.0)
+    
     eff_factor = (b_params.get('efficiency', 92.0) / 100.0) ** 0.5
     
     soc_history = []
     action_history = []
     final_grid_load = []
     
-    current_soc_kwh = b_cap * (b_params.get('initial_soc_pct', 50.0) / 100.0)
+    # Determine the actual usable capacity based on temperature if available
+    temp_col = 'temp_c' if 'temp_c' in df.columns else None
+    temp_cap_coeff = b_params.get('temp_cap_coeff', 0.5) / 100.0 # 0.5% per degree
+    
+    current_soc_kwh = b_cap_nominal * (initial_soc_pct / 100.0)
     
     load_source_col = 'net_load_kw' if 'net_load_kw' in df.columns else 'consumption_kw'
     solar_gen_col = 'solar_gen_kw' if 'solar_gen_kw' in df.columns else None
-
-    for _, row in df.iterrows():
+    
+    for idx, row in df.iterrows():
         timestamp = row['timestamp']
         current_load = row[load_source_col]
         solar_yield = row[solar_gen_col] if solar_gen_col else 0.0
-        
         current_hour = timestamp.hour
         battery_action_kw = 0.0 
+        
+        # Calculate dynamic battery capacity based on temperature
+        if temp_col and temp_col in row:
+            temp = row[temp_col]
+            # 0.5% loss per degree below 15°C or above 35°C
+            dev = max(0.0, 15.0 - temp) + max(0.0, temp - 35.0)
+            retention = max(0.2, 1.0 - dev * temp_cap_coeff)
+        else:
+            retention = 1.0
+            
+        b_cap = b_cap_nominal * retention
+        min_soc_kwh = b_cap * (min_soc_pct / 100.0)
+        max_soc_kwh = b_cap * (max_soc_pct / 100.0)
+        
+        # Ensure current soc starts or remains within new limits
+        current_soc_kwh = np.clip(current_soc_kwh, min_soc_kwh, max_soc_kwh)
         
         if current_load > shaving_threshold:
             required_discharge_kw = current_load - shaving_threshold
             allowed_discharge_kw = min(required_discharge_kw, b_pwr)
-            max_available_from_cells_kw = (current_soc_kwh * res_factor) * eff_factor
+            max_available_from_cells_kw = max(0.0, (current_soc_kwh - min_soc_kwh) * res_factor) * eff_factor
             final_discharge_kw = min(allowed_discharge_kw, max_available_from_cells_kw)
             
             battery_action_kw = final_discharge_kw
@@ -158,8 +183,8 @@ def simulate_battery_logic(df: pd.DataFrame, grid_limit: float, b_params: dict, 
             
             if solar_gen_col:
                 solar_surplus_kw = max(0.0, solar_yield - cons_kw)
-                if solar_surplus_kw > 0.0 and current_soc_kwh < b_cap:
-                    empty_space_kwh = b_cap - current_soc_kwh
+                if solar_surplus_kw > 0.0 and current_soc_kwh < max_soc_kwh:
+                    empty_space_kwh = max_soc_kwh - current_soc_kwh
                     max_charge_allowed_by_cells_kw = (empty_space_kwh * res_factor) / eff_factor
                     solar_charge_kw = min(solar_surplus_kw, b_pwr, charge_pwr_limit, max_charge_allowed_by_cells_kw)
                     
@@ -168,7 +193,7 @@ def simulate_battery_logic(df: pd.DataFrame, grid_limit: float, b_params: dict, 
                     
             # Source B: Grid charging (only inside window and if green_charging is False)
             grid_charge_kw = 0.0
-            if not green_charging and current_soc_kwh < b_cap:
+            if not green_charging and current_soc_kwh < max_soc_kwh:
                 is_inside_window = False
                 if start_hour <= end_hour:
                     is_inside_window = (start_hour <= current_hour <= end_hour)
@@ -176,7 +201,7 @@ def simulate_battery_logic(df: pd.DataFrame, grid_limit: float, b_params: dict, 
                     is_inside_window = (current_hour >= start_hour or current_hour <= end_hour)
                     
                 if is_inside_window:
-                    empty_space_kwh = b_cap - current_soc_kwh
+                    empty_space_kwh = max_soc_kwh - current_soc_kwh
                     max_charge_allowed_by_cells_kw = (empty_space_kwh * res_factor) / eff_factor
                     
                     # Remaining net load on grid after solar charging

@@ -133,9 +133,38 @@ def render_demo_mode():
             if has_consumption:
                 has_battery = st.checkbox("Integrate Battery (BESS)", value=st.session_state["demo_has_battery"])
                 if has_battery:
-                    b_cap = st.number_input("Storage Capacity (kWh)", min_value=5.0, value=200.0, step=10.0)
+                    col_b1, col_b2 = st.columns(2)
+                    num_batteries = col_b1.number_input("Number of Batteries", min_value=1, value=10, step=1, key="demo_bat_num")
+                    cap_per_module = col_b2.number_input("Capacity per Module (kWh)", min_value=1.0, value=20.0, step=1.0, key="demo_bat_mod_cap")
+                    b_cap = float(num_batteries * cap_per_module)
+                    st.success(f"**Total Capacity: {b_cap:,.1f} kWh**")
+                    
                     b_pwr = st.number_input("Max Inverter Power (kW)", min_value=5.0, value=100.0, step=5.0)
                     chg_pwr = st.slider("Max Recharge Speed (kW)", 5, 200, 30)
+                    
+                    with st.expander("⚙️ Advanced Battery Parameters", expanded=False):
+                        b_type = st.selectbox(
+                            "Battery Type / Chemistry",
+                            ["LFP (Lithium Iron Phosphate)", "NMC (Lithium Nickel Manganese Cobalt)", "Lead-Acid", "Flow Battery"],
+                            index=0,
+                            key="demo_bat_type"
+                        )
+                        min_soc_pct = st.slider("Min State of Charge (SoC %)", 0, 50, 10, key="demo_bat_min_soc")
+                        max_soc_pct = st.slider("Max State of Charge (SoC %)", 50, 100, 90, key="demo_bat_max_soc")
+                        initial_soc_pct = st.slider("Initial State of Charge (%)", 0, 100, 50, key="demo_bat_init_soc")
+                        
+                        cycle_life = st.number_input(
+                            "Cycle Life (Expected total cycles)",
+                            min_value=500, max_value=15000, value=6000, step=500,
+                            key="demo_bat_cycle_life"
+                        )
+                        temp_cap_coeff = st.slider(
+                            "Temperature Capacity Penalty (%/°C deviation)",
+                            0.0, 2.0, 0.5, step=0.1,
+                            help="Capacity loss coefficient per °C deviation from 15°C - 35°C range.",
+                            key="demo_bat_temp_cap_coeff"
+                        )
+                        efficiency = st.slider("Round-Trip Efficiency (%)", 70, 98, 92, key="demo_bat_eff")
                     
                     # We auto-configure a green charging window
                     bat_params = {
@@ -146,8 +175,15 @@ def render_demo_mode():
                         "charge_start_hour": 22,
                         "charge_end_hour": 6,
                         "green_charging": has_solar,
-                        "efficiency": 92.0,
-                        "initial_soc_pct": 50.0
+                        "efficiency": float(efficiency),
+                        "initial_soc_pct": float(initial_soc_pct),
+                        "min_soc_pct": float(min_soc_pct),
+                        "max_soc_pct": float(max_soc_pct),
+                        "num_batteries": num_batteries,
+                        "cap_per_module": cap_per_module,
+                        "battery_type": b_type,
+                        "cycle_life": cycle_life,
+                        "temp_cap_coeff": temp_cap_coeff
                     }
                 else:
                     bat_params = {}
@@ -252,6 +288,8 @@ def render_demo_mode():
                     st.session_state["demo_grid_limit"] = grid_limit
                     st.session_state["demo_has_battery"] = has_battery
                     st.session_state["demo_has_generator"] = has_generator
+                    st.session_state["demo_bat_params"] = bat_params
+                    st.session_state["demo_sol_params"] = sol_params
                     
                     st.success("🎉 Scenario calculated successfully!")
                 except Exception as sim_err:

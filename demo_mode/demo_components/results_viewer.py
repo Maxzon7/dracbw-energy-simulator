@@ -194,6 +194,41 @@ def render_demo_results(
             
         with tab_assets:
             if has_battery and 'battery_soc_kwh' in results.columns:
+                bat_params = st.session_state.get("demo_bat_params", {})
+                b_type = bat_params.get("battery_type", "LFP (Lithium Iron Phosphate)")
+                min_soc = bat_params.get("min_soc_pct", 10.0)
+                max_soc = bat_params.get("max_soc_pct", 90.0)
+                b_cap_nominal = bat_params.get("b_cap", 200.0)
+                cycle_life = bat_params.get("cycle_life", 6000)
+                
+                # Dynamic calculations
+                throughput_kwh = results['battery_action_kw'].clip(lower=0.0).sum() * res_factor
+                usable_capacity_kwh = b_cap_nominal * (max_soc - min_soc) / 100.0
+                cycles_run = throughput_kwh / usable_capacity_kwh if usable_capacity_kwh > 0 else 0.0
+                
+                # Degradation calculation
+                cycle_deg = (cycles_run / cycle_life) * 100.0 if cycle_life > 0 else 0.0
+                calendar_deg = 1.5
+                total_deg = max(cycle_deg, calendar_deg)
+                
+                st.markdown(f"#### 🔋 Storage Performance: {b_type}")
+                st.caption(f"Configuration: **{bat_params.get('num_batteries', 10)} modules** of **{bat_params.get('cap_per_module', 20.0):.1f} kWh** | SoC range: **{min_soc:.0f}% - {max_soc:.0f}%**")
+                
+                col_met1, col_met2, col_met3 = st.columns(3)
+                col_met1.metric("Simulated Cycles", f"{cycles_run:.1f} Cycles")
+                col_met2.metric("Est. Capacity Degradation", f"-{total_deg:.2f}% / yr", help="Calculated based on simulated cycle throughput and calendar aging.")
+                
+                # Temperature capacity retention
+                if 'temp_c' in results.columns:
+                    temp_cap_coeff = bat_params.get('temp_cap_coeff', 0.5) / 100.0
+                    temp_dev = np.maximum(0.0, 15.0 - results['temp_c']) + np.maximum(0.0, results['temp_c'] - 35.0)
+                    retention = np.maximum(0.2, 1.0 - temp_dev * temp_cap_coeff)
+                    min_retention = retention.min() * 100.0
+                    col_met3.metric("Min Temp Cap Retention", f"{min_retention:.1f}%", help="Reduced storage capacity due to cold/hot intervals.")
+                else:
+                    col_met3.metric("Min Temp Cap Retention", "100.0% (N/A)")
+                st.divider()
+
                 if is_solar_active:
                     # Dual layout: Solar utilization (stacked Area) and Battery SoC
                     c_left, c_right = st.columns(2)
@@ -236,7 +271,40 @@ def render_demo_results(
                 
         with tab_solar_detail:
             if is_solar_active:
-                st.write("**Solar Resource Details**")
+                sol_params = st.session_state.get("demo_sol_params", {})
+                panel_type = sol_params.get("panel_type", "Monocrystalline Silicon")
+                ghi_source = sol_params.get("ghi_source", "Open-Meteo API")
+                yield_factor = sol_params.get("yield_factor", 1.0)
+                
+                loss_sum = sol_params.get("loss_inverter", 3.0) + sol_params.get("loss_cabling", 1.5) + sol_params.get("loss_soiling", 1.0) + sol_params.get("loss_other", 2.0)
+                
+                st.markdown(f"#### ☀️ Solar Plant Details: {panel_type}")
+                st.caption(f"Radiation Source: **{ghi_source}** | Yield Factor: **{yield_factor:.2f}** | Total Technical Losses: **{loss_sum:.1f}%**")
+                
+                col_sol_met1, col_sol_met2, col_sol_met3 = st.columns(3)
+                
+                # Equivalent full load hours
+                total_yield_kwh = results['solar_gen_kw'].sum() * res_factor
+                eq_hours = total_yield_kwh / installed_kwp if installed_kwp > 0 else 0.0
+                col_sol_met1.metric("Equivalent Full-Load Hours", f"{eq_hours:.1f} hrs/yr")
+                
+                # Thermal loss avg/max
+                if 'temp_c' in results.columns:
+                    temp_coeff = sol_params.get('temp_coeff', 0.25) / 100.0
+                    temp_loss = np.maximum(0.0, (results['temp_c'] - 25.0) * temp_coeff)
+                    avg_temp_loss = temp_loss.mean() * 100.0
+                    max_temp_loss = temp_loss.max() * 100.0
+                    col_sol_met2.metric("Avg / Max Thermal Loss", f"{avg_temp_loss:.1f}% / {max_temp_loss:.1f}%")
+                else:
+                    col_sol_met2.metric("Thermal Loss", "0.0% (N/A)")
+                    
+                # Irradiation
+                if 'ghi_w_m2' in results.columns:
+                    avg_ghi = results['ghi_w_m2'].mean()
+                    col_sol_met3.metric("Average GHI", f"{avg_ghi:.1f} W/m²")
+                else:
+                    col_sol_met3.metric("Average GHI", "N/A")
+                st.divider()
                 
                 # Render GHI line and Monthly sums
                 col_det1, col_det2 = st.columns(2)
@@ -289,8 +357,9 @@ def render_demo_results(
             cols_to_export["Consumption_kW"] = results['consumption_kw'].round(2)
             cols_to_export["Optimized_Grid_Load_kW"] = results['final_grid_load_kw'].round(2)
         if 'solar_gen_kw' in results.columns:
-            cols_to_export["GHI_W_m2"] = results['ghi_w_m2'].round(1)
             cols_to_export["Solar_Yield_kW"] = results['solar_gen_kw'].round(3)
+        if 'ghi_w_m2' in results.columns:
+            cols_to_export["GHI_W_m2"] = results['ghi_w_m2'].round(1)
         if has_battery and 'battery_action_kw' in results.columns:
             cols_to_export["Battery_Action_kW"] = results['battery_action_kw'].round(2)
             cols_to_export["Battery_SoC_kWh"] = results['battery_soc_kwh'].round(2)

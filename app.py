@@ -38,7 +38,7 @@ def init_session_states():
     if 'scenario_vault' not in st.session_state: st.session_state['scenario_vault'] = {} 
     if 'active_scenario_name' not in st.session_state: st.session_state['active_scenario_name'] = None 
     if 'ui_slider_states' not in st.session_state: st.session_state['ui_slider_states'] = {'global': {}, 'monthly': {}, 'anomalies': []}
-    if 'enable_financials' not in st.session_state: st.session_state['enable_financials'] = True
+    if 'enable_financials' not in st.session_state: st.session_state['enable_financials'] = False
 
 def main():
     st.set_page_config(page_title="Pro Energy Simulator", layout="wide", page_icon="⚡")
