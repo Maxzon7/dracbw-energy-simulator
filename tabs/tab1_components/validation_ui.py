@@ -7,7 +7,7 @@ from tabs.tab1_components.validation_components.advanced_metrics import render_a
 from tabs.tab1_components.validation_components.charts import render_multi_resolution_charts
 from tabs.tab1_components.validation_components.save_handler import render_save_handler
 
-def validate_and_process_data(data_source, uploaded_file, upload_params, syn_params, proj_params):
+def validate_and_process_data(data_source, uploaded_file, upload_params, syn_params, proj_params, simp_params=None):
     df = None
     is_valid = False
     msg = ""
@@ -29,6 +29,19 @@ def validate_and_process_data(data_source, uploaded_file, upload_params, syn_par
             )
             is_valid = True
             msg = "Synthetic data generated successfully."
+        except Exception as e:
+            msg = f"Error: {e}"
+            
+    elif data_source == "12-Month Consumption & Peak (Simplified)":
+        from tabs.tab1_components.simplified_12month import generate_12month_simplified_profile
+        if not simp_params or 'monthly_data' not in simp_params:
+            return None, False, "Missing parameters."
+        try:
+            df = generate_12month_simplified_profile(
+                monthly_data=simp_params.get('monthly_data', {})
+            )
+            is_valid = True
+            msg = "Simplified 12-month profile generated successfully."
         except Exception as e:
             msg = f"Error: {e}"
             

@@ -81,7 +81,10 @@ def render_tab1_baseline():
     preset_data = {}
 
     if contract_mode == "Real Contract Preset":
-        preset_label, preset_data = render_preset_selector()
+        saved_preset = saved_params.get('financial_metadata', {}).get('tariff_mode', "🛠️ Custom Tariff")
+        if saved_preset in ["🛠️ Manual Custom Tariff", "🛠️ Volatile Monthly Custom Tariff"]:
+            saved_preset = "🛠️ Custom Tariff"
+        preset_label, preset_data = render_preset_selector(saved_preset)
     elif contract_mode == "Generic AC Connection Tier":
         from tabs.tab1_components.financial_ui import get_generic_ac_presets
         ac_presets = get_generic_ac_presets()
@@ -116,7 +119,7 @@ def render_tab1_baseline():
             "tariff_mode": "None (Consumption Only)"
         }
 
-    if st.session_state.get('enable_financials', False) and contract_mode == "Real Contract Preset":
+    if st.session_state.get('enable_financials', False) and contract_mode == "Real Contract Preset" and preset_label == "🛠️ Custom Tariff":
         from tabs.tab3_components.tarrif_calc import render_tariff_builder_ui
         render_tariff_builder_ui()
         st.write("")
@@ -127,22 +130,46 @@ def render_tab1_baseline():
         st.session_state['current_financial_metadata'] = {}
     if preset_data:
         st.session_state['current_financial_metadata'].update(preset_data)
-        st.session_state['current_financial_metadata']['tariff_mode'] = preset_label
+    st.session_state['current_financial_metadata']['tariff_mode'] = preset_label
 
     st.divider()
 
     # --- 2. DATENQUELLE ---
     st.write("### 📂 2. Data Source Configuration")
-    data_source = st.radio("Select Data Source:", ["Upload CSV", "Generate Synthetic Load", "Advanced Manual Generator"], horizontal=True)
+    ds_options = [
+        "12-Month Consumption & Peak (Simplified)",
+        "Upload CSV",
+        "Generate Synthetic Load",
+        "Advanced Manual Generator"
+    ]
+    saved_ds = saved_params.get('data_source', "12-Month Consumption & Peak (Simplified)")
+    if saved_ds == "CSV":
+        saved_ds = "Upload CSV"
+    elif saved_ds == "Synthetic":
+        saved_ds = "Generate Synthetic Load"
+        
+    ds_idx = ds_options.index(saved_ds) if saved_ds in ds_options else 0
+
+    data_source = st.radio(
+        "Select Data Source:", 
+        options=ds_options,
+        index=ds_idx,
+        horizontal=True,
+        key=f"data_source_{active_baseline_name}"
+    )
 
     # Platzhalter für UI-Kompatibilität
     uploaded_file, filtered_df, upload_params = None, None, {}
     syn_params = {}
+    simp_params = {}
 
     if data_source == "Upload CSV":
         uploaded_file, filtered_df, upload_params = render_upload_ui(active_baseline_name, saved_params)
     elif data_source == "Generate Synthetic Load":
         syn_params = render_synthetic_load_ui(active_baseline_name)
+    elif data_source == "12-Month Consumption & Peak (Simplified)":
+        from tabs.tab1_components.simplified_12month import render_simplified_12month_ui
+        simp_params = render_simplified_12month_ui(active_baseline_name)
     else:
         render_manual_builder(active_baseline_name, is_edit_mode=False, base_p=saved_params)
 
@@ -160,7 +187,7 @@ def render_tab1_baseline():
             working_fin = saved_params.get('financial_metadata', {}).copy()
             if preset_data:
                 working_fin.update(preset_data)
-                working_fin['tariff_mode'] = preset_label
+            working_fin['tariff_mode'] = preset_label
 
             fin_params = render_financial_inputs(working_fin, include_financials, contract_mode)
 
@@ -174,7 +201,7 @@ def render_tab1_baseline():
         if submit_btn:
             with st.spinner("Processing energy profile & validating limits..."):
                 df, is_valid, msg = validate_and_process_data(
-                    data_source, uploaded_file, upload_params, syn_params, proj_params
+                    data_source, uploaded_file, upload_params, syn_params, proj_params, simp_params
                 )
 
                 if data_source == "Upload CSV" and filtered_df is not None and not filtered_df.empty:
@@ -193,6 +220,7 @@ def render_tab1_baseline():
                         active_scenario_obj.base_tariff.contracted_capacity_kw = limit_kw
                         active_scenario_obj.metadata = proj_params
                         active_scenario_obj.metadata['grid_contract_mode'] = contract_mode
+                        active_scenario_obj.metadata['data_source'] = data_source
                         if contract_mode == "Generic AC Connection Tier":
                             active_scenario_obj.metadata['generic_ac_key'] = selected_ac_key
                         active_scenario_obj.metadata['include_financials'] = include_financials

@@ -394,13 +394,9 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
 
 def calculate_annual_grid_bill_with_pillars(df, fin_params):
     """
-    Calculates the exact annual grid bill using the 4-pillar grid tariff data.
-    Groups the load profile by month to calculate:
-      - Fixed Commercialization & Transport Fee
-      - Grid Capacity Charge (contracted kW)
-      - Peak Load Penalty (actual peaks per month)
-      - Excess Capacity Penalty (actual peak - contracted capacity)
-      - Active Energy Volume Cost
+    Calculates the exact annual grid bill using either:
+      - A volatile monthly schedule if "monthly_tariff_schedule" is in fin_params.
+      - The standard static 4-pillar parameters otherwise.
     """
     temp_df = df.copy()
     
@@ -408,7 +404,6 @@ def calculate_annual_grid_bill_with_pillars(df, fin_params):
     if 'timestamp' in temp_df.columns:
         temp_df['timestamp'] = pd.to_datetime(temp_df['timestamp'])
         temp_df['month'] = temp_df['timestamp'].dt.month
-        temp_df['is_normal'] = (temp_df['timestamp'].dt.dayofweek < 5) & (temp_df['timestamp'].dt.hour >= 7) & (temp_df['timestamp'].dt.hour < 23)
         try:
             delta = temp_df['timestamp'].iloc[1] - temp_df['timestamp'].iloc[0]
             factor = 60 / (delta.seconds / 60)
@@ -419,42 +414,131 @@ def calculate_annual_grid_bill_with_pillars(df, fin_params):
         pts_per_month = int(730 * res)
         temp_df['month'] = (temp_df.index // pts_per_month) + 1
         temp_df['month'] = temp_df['month'].clip(upper=12)
-        temp_df['is_normal'] = True 
         factor = 4.0 if len(temp_df) == 35040 else 1.0
 
     load_col = 'final_grid_load_kw' if 'final_grid_load_kw' in temp_df.columns else 'consumption_kw'
-    monthly_peaks = temp_df.groupby('month')[load_col].max()
     
-    # Unpack grid operator parameters
-    fixed_conn = float(fin_params.get('fixed_annual_connection_fee', 0.0) or 0.0)
-    fixed_trans = float(fin_params.get('fixed_annual_transport_fee', 0.0) or 0.0)
-    contracted_kw = float(fin_params.get('contracted_capacity_kw', 0.0) or 0.0)
-    contract_price_yr = float(fin_params.get('contracted_capacity_fee_per_kw_year', 0.0) or 0.0)
-    peak_price_mo = float(fin_params.get('peak_capacity_fee_per_kw_month', 0.0) or 0.0)
+    # Check if we have a monthly tariff schedule
+    monthly_schedule = fin_params.get('monthly_tariff_schedule', {})
     
-    energy_price_norm = float(fin_params.get('energy_price_normal_per_kwh', 0.0) or 0.0)
-    energy_price_laag = float(fin_params.get('energy_price_laag_per_kwh', 0.0) or 0.0)
-    
-    # 1. Fixed connection + transport + contracted capacity
-    annual_fixed = fixed_conn + fixed_trans + (contracted_kw * contract_price_yr)
-    
-    # 2. Peak load penalty
-    annual_peak = monthly_peaks.sum() * peak_price_mo
-    
-    # 3. Excess capacity penalty
-    annual_excess = 0.0
-    contract_price_mo = contract_price_yr / 12.0
-    if contracted_kw > 0 and contract_price_mo > 0:
-        for m, peak in monthly_peaks.items():
-            if peak > contracted_kw:
-                annual_excess += (peak - contracted_kw) * contract_price_mo
+    if monthly_schedule:
+        total_annual_gross = 0.0
+        
+        def is_hour_in_range(hour, start, end):
+            if start == end:
+                return False
+            if start < end:
+                return start <= hour < end
+            else:
+                return (hour >= start) | (hour < end)
                 
-    # 4. Energy cost
-    energy_normal = temp_df[temp_df['is_normal']][load_col].sum() / factor
-    energy_laag = temp_df[~temp_df['is_normal']][load_col].sum() / factor if 'is_normal' in temp_df.columns else 0.0
-    annual_energy = (energy_normal * energy_price_norm) + (energy_laag * energy_price_laag)
-    
-    return annual_fixed + annual_peak + annual_excess + annual_energy
+        for m in range(1, 13):
+            m_mask = temp_df['month'] == m
+            m_df = temp_df[m_mask]
+            if len(m_df) == 0:
+                continue
+                
+            m_peak = m_df[load_col].max()
+            
+            # Lookup month params
+            m_data = monthly_schedule.get(str(m), {}) or monthly_schedule.get(m, {})
+            if not m_data:
+                m_data = monthly_schedule.get('1', {}) or monthly_schedule.get(1, {})
+                
+            base_fee = float(m_data.get('base_fee', 0.0) or 0.0)
+            contracted_kw = float(m_data.get('contracted_capacity_kw', 0.0) or 0.0)
+            contract_price = float(m_data.get('contracted_capacity_price', 0.0) or 0.0)
+            peak_penalty_price = float(m_data.get('peak_penalty_price', 0.0) or 0.0)
+            excess_price = float(m_data.get('excess_penalty_price', 0.0) or 0.0)
+            tax_pct = float(m_data.get('tax_pct', 0.0) or 0.0)
+            local_tax_pct = float(m_data.get('local_tax_pct', 0.0) or 0.0)
+            subsidy = float(m_data.get('subsidy_amount', 0.0) or 0.0)
+            
+            alta_price = float(m_data.get('alta', {}).get('price', 0.0) or 0.0)
+            alta_start = int(m_data.get('alta', {}).get('start_hour', 18))
+            alta_end = int(m_data.get('alta', {}).get('end_hour', 23))
+            
+            baja_price = float(m_data.get('baja', {}).get('price', 0.0) or 0.0)
+            baja_start = int(m_data.get('baja', {}).get('start_hour', 23))
+            baja_end = int(m_data.get('baja', {}).get('end_hour', 5))
+            
+            resto_price = float(m_data.get('resto', {}).get('price', 0.0) or 0.0)
+            
+            # 1. Fixed & capacity costs
+            m_fixed_cap = base_fee + (contracted_kw * contract_price)
+            
+            # 2. Peak penalty cost (Consumo de Potencia)
+            m_peak_penalty = m_peak * peak_penalty_price
+            
+            # 3. Excess penalty cost (Exceso de Potencia)
+            m_excess = 0.0
+            if m_peak > contracted_kw:
+                m_excess = (m_peak - contracted_kw) * excess_price
+                
+            # 4. Energy cost segmented by time zones
+            m_energy_cost = 0.0
+            if 'timestamp' in m_df.columns:
+                m_df_copy = m_df.copy()
+                m_df_copy['hour'] = m_df_copy['timestamp'].dt.hour
+                
+                alta_mask = m_df_copy['hour'].apply(lambda h: is_hour_in_range(h, alta_start, alta_end))
+                baja_mask = m_df_copy['hour'].apply(lambda h: is_hour_in_range(h, baja_start, baja_end))
+                resto_mask = ~(alta_mask | baja_mask)
+                
+                e_alta = m_df_copy[alta_mask][load_col].sum() / factor
+                e_baja = m_df_copy[baja_mask][load_col].sum() / factor
+                e_resto = m_df_copy[resto_mask][load_col].sum() / factor
+                
+                m_energy_cost = (e_alta * alta_price) + (e_baja * baja_price) + (e_resto * resto_price)
+            else:
+                total_kwh = m_df[load_col].sum() / factor
+                m_energy_cost = total_kwh * resto_price
+                
+            net_monthly = m_fixed_cap + m_peak_penalty + m_excess + m_energy_cost - subsidy
+            gross_monthly = net_monthly * (1.0 + (tax_pct + local_tax_pct) / 100.0)
+            
+            total_annual_gross += gross_monthly
+            
+        return total_annual_gross
+        
+    else:
+        if 'timestamp' in temp_df.columns:
+            temp_df['is_normal'] = (temp_df['timestamp'].dt.dayofweek < 5) & (temp_df['timestamp'].dt.hour >= 7) & (temp_df['timestamp'].dt.hour < 23)
+        else:
+            temp_df['is_normal'] = True
+            
+        monthly_peaks = temp_df.groupby('month')[load_col].max()
+        
+        fixed_conn = float(fin_params.get('fixed_annual_connection_fee', 0.0) or 0.0)
+        fixed_trans = float(fin_params.get('fixed_annual_transport_fee', 0.0) or 0.0)
+        contracted_kw = float(fin_params.get('contracted_capacity_kw', 0.0) or 0.0)
+        contract_price_yr = float(fin_params.get('contracted_capacity_fee_per_kw_year', 0.0) or 0.0)
+        peak_price_mo = float(fin_params.get('peak_capacity_fee_per_kw_month', 0.0) or 0.0)
+        
+        energy_price_norm = float(fin_params.get('energy_price_normal_per_kwh', 0.0) or 0.0)
+        energy_price_laag = float(fin_params.get('energy_price_laag_per_kwh', 0.0) or 0.0)
+        
+        annual_fixed = fixed_conn + fixed_trans + (contracted_kw * contract_price_yr)
+        annual_peak = monthly_peaks.sum() * peak_price_mo
+        
+        annual_excess = 0.0
+        contract_price_mo = contract_price_yr / 12.0
+        if contracted_kw > 0 and contract_price_mo > 0:
+            for m, peak in monthly_peaks.items():
+                if peak > contracted_kw:
+                    annual_excess += (peak - contracted_kw) * contract_price_mo
+                    
+        energy_normal = temp_df[temp_df['is_normal']][load_col].sum() / factor
+        energy_laag = temp_df[~temp_df['is_normal']][load_col].sum() / factor if 'is_normal' in temp_df.columns else 0.0
+        annual_energy = (energy_normal * energy_price_norm) + (energy_laag * energy_price_laag)
+        
+        net_total = annual_fixed + annual_peak + annual_excess + annual_energy
+        
+        vat_pct = float(fin_params.get('national_vat_pct', 0.0) or 0.0)
+        local_pct = float(fin_params.get('local_tax_pct', 0.0) or 0.0)
+        gross_total = net_total * (1.0 + (vat_pct + local_pct) / 100.0)
+        
+        return gross_total
 
 
 def generate_15_year_cashflow(sub_scenario: SubScenario, base_scenario: BaseScenario, discount_rate: float = 0.05, capex_mult: float = 1.0, energy_esc_add: float = 0.0, diesel_esc_add: float = 0.0) -> pd.DataFrame:

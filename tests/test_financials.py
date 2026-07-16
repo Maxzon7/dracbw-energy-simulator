@@ -124,5 +124,64 @@ class TestFinancialEngine(unittest.TestCase):
         # Unfeasible scenario with no sign change (no positive returns)
         self.assertEqual(calculate_irr([-100.0, -20.0, -10.0]), -1.0)
 
+    def test_generate_12month_simplified_profile(self):
+        from tabs.tab1_components.simplified_12month import generate_12month_simplified_profile
+        monthly_data = {
+            1: {"consumption_kwh": 10000.0, "peak_kw": 50.0}
+        }
+        for m in range(2, 13):
+            monthly_data[m] = {"consumption_kwh": 8000.0, "peak_kw": 40.0}
+            
+        df = generate_12month_simplified_profile(monthly_data, year=2026)
+        
+        self.assertEqual(len(df), 8760)
+        self.assertIn("timestamp", df.columns)
+        self.assertIn("consumption_kw", df.columns)
+        
+        df['month'] = df['timestamp'].dt.month
+        jan_df = df[df['month'] == 1]
+        self.assertAlmostEqual(jan_df['consumption_kw'].sum(), 10000.0, delta=1.0)
+        self.assertAlmostEqual(jan_df['consumption_kw'].max(), 50.0, delta=1e-3)
+        
+        feb_df = df[df['month'] == 2]
+        self.assertAlmostEqual(feb_df['consumption_kw'].sum(), 8000.0, delta=1.0)
+        self.assertAlmostEqual(feb_df['consumption_kw'].max(), 40.0, delta=1e-3)
+
+    def test_calculate_annual_grid_bill_with_pillars_monthly_schedule(self):
+        from tabs.tab3_components.financial_engine import calculate_annual_grid_bill_with_pillars
+        
+        times = pd.date_range(start="2026-01-01 00:00:00", periods=8760, freq="h")
+        df = pd.DataFrame({
+            "timestamp": times,
+            "consumption_kw": [10.0] * 8760
+        })
+        
+        df.loc[df['timestamp'].dt.month == 1, 'consumption_kw'] = 10.0
+        df.loc[df['timestamp'] == '2026-01-01 12:00:00', 'consumption_kw'] = 50.0
+        df.loc[df['timestamp'] == '2026-02-01 12:00:00', 'consumption_kw'] = 40.0
+        
+        monthly_schedule = {}
+        for m in range(1, 13):
+            monthly_schedule[str(m)] = {
+                "base_fee": 100.0,
+                "contracted_capacity_kw": 30.0,
+                "contracted_capacity_price": 5.0,
+                "peak_penalty_price": 2.0,
+                "excess_penalty_price": 10.0,
+                "alta": {"price": 0.20, "start_hour": 18, "end_hour": 22},
+                "baja": {"price": 0.10, "start_hour": 22, "end_hour": 6},
+                "resto": {"price": 0.15},
+                "tax_pct": 15.0,
+                "local_tax_pct": 5.0,
+                "subsidy_amount": 10.0
+            }
+            
+        fin_params = {
+            "monthly_tariff_schedule": monthly_schedule
+        }
+        
+        total_bill = calculate_annual_grid_bill_with_pillars(df, fin_params)
+        self.assertGreater(total_bill, 0.0)
+
 if __name__ == "__main__":
     unittest.main()
