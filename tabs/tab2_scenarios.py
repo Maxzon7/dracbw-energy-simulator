@@ -14,7 +14,7 @@ from tabs.tab2_components.results_viewer import render_results_and_charts
 from logic.energy_logic import simulate_battery_logic, simulate_generator_logic
 
 # --- UNSERE NEUEN KLASSEN-TOOLS ---
-from classes.models import SubScenario, FinancialParams
+from classes.models import SubScenario, FinancialParams, Tariff
 from logic.storage_manager import get_all_base_scenarios, get_base_scenario, add_sub_scenario
 
 @st.fragment
@@ -312,7 +312,7 @@ def render_tab2_scenarios():
         st.divider()
         st.write("### Save Variant")
         scenario_name_input = st.text_input("Name for this variant:", value=f"Option: {scenario_mode}")
-        financials_active = st.toggle("Enter financial parameters? (Optional)")
+        financials_active = st.session_state.get('enable_financials', False)
         financial_module = None
 
         if financials_active:

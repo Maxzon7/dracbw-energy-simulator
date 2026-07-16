@@ -135,7 +135,7 @@ def render_solar_ui(scenario_id: str, existing_params: dict = None) -> dict:
 
     if st.session_state.get('enable_financials', False):
         st.divider()
-        with st.expander("Financial Estimates (CAPEX, OPEX & Degradation)", expanded=False):
+        with st.expander("Financial Estimates (CAPEX, OPEX & Degradation)", expanded=True):
             st.write("Configure the estimated capital expenditure, maintenance costs, and physical wear for the ROI analysis.")
             c_fin1, c_fin2, c_fin3 = st.columns(3)
             

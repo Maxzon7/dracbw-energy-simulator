@@ -4,8 +4,48 @@ import plotly.graph_objects as go
 import pandas as pd
 
 from logic.storage_manager import get_all_base_scenarios
-from tabs.tab3_components.financial_engine import generate_15_year_cashflow, get_payback_year
-from tabs.tab3_components.tarrif_calc import render_tariff_builder_ui
+from tabs.tab3_components.financial_engine import generate_15_year_cashflow, get_payback_year, calculate_annual_grid_bill_with_pillars
+
+def generate_baseline_cashflow_df(base_scenario, discount_rate, capex_mult=1.0, energy_esc_add=0.0):
+    fin_meta = base_scenario.metadata.get('financial_metadata', {})
+    lifespan = int(fin_meta.get('lifespan_years', 15))
+    base_grid_capex = float(fin_meta.get('baseline_grid_capex', 0.0))
+    base_tariff = base_scenario.base_tariff
+    
+    base_df = base_scenario.original_profile
+    if len(base_df) > 0:
+        factor = 4.0 if len(base_df) > 15000 else 1.0
+    else:
+        factor = 1.0
+        
+    base_grid_bill_yr1 = calculate_annual_grid_bill_with_pillars(base_df, fin_meta)
+    
+    energy_esc = float(fin_meta.get('energy_price_growth', 4.0)) / 100.0 + energy_esc_add
+    
+    jahre = list(range(lifespan + 1))
+    df = pd.DataFrame({"Year": jahre})
+    
+    df["CAPEX (€)"] = 0.0
+    df.loc[df["Year"] == 0, "CAPEX (€)"] = -base_grid_capex * capex_mult
+    
+    grid_costs = [0.0]
+    for jahr in range(1, lifespan + 1):
+        grid_multiplier = (1.0 + energy_esc) ** (jahr - 1)
+        grid_costs.append(-base_grid_bill_yr1 * grid_multiplier)
+        
+    df["OPEX (€)"] = 0.0
+    df["Grid Savings (€)"] = 0.0
+    df["Generator Fuel (€)"] = 0.0
+    df["Generator Rental (€)"] = 0.0
+    df["Generator Maintenance (€)"] = 0.0
+    df["Grid Costs (€)"] = grid_costs
+    
+    df["Net Cashflow (€)"] = df["CAPEX (€)"] + df["Grid Costs (€)"]
+    df["Cumulative Cashflow (€)"] = df["Net Cashflow (€)"].cumsum()
+    df["Present Value (€)"] = df["Net Cashflow (€)"] / ((1.0 + discount_rate) ** df["Year"])
+    df["Cumulative NPV (€)"] = df["Present Value (€)"].cumsum()
+    
+    return df
 
 def render_tab3_comparison():
     st.write("## Advanced Comparison Suite")
@@ -157,10 +197,6 @@ def render_tab3_comparison():
             
         if st.session_state.get('enable_financials', False):
             # --- 3. THE CFO FINANCIAL DASHBOARD ---
-            st.divider()
-            render_tariff_builder_ui()
-            st.divider()
-            
             active_subs = [s for s in linked_subs if s.name in selected_profiles]
             render_cfo_cockpit_from_classes(selected_base_obj, active_subs)
         
@@ -353,6 +389,14 @@ def render_cfo_cockpit_from_classes(base_scenario, selected_subs):
                 detailed_tables[sub.name] = df_cashflow
 
     if kpi_data:
+        # Generate and add Baseline detailed cashflow table
+        df_base_cf = generate_baseline_cashflow_df(
+            base_scenario, discount_rate,
+            capex_mult=capex_mult,
+            energy_esc_add=energy_inf_add
+        )
+        detailed_tables["Baseline BAU"] = df_base_cf
+
         # Append baseline BAU reference
         kpi_data.append({
             "Scenario": f"{base_scenario.name} (Baseline BAU)",
@@ -385,12 +429,48 @@ def render_cfo_cockpit_from_classes(base_scenario, selected_subs):
         st.divider()
         st.markdown("### Detailed Year-by-Year Cashflows")
         
-        variant_names = list(detailed_tables.keys())
-        ui_tabs = st.tabs([f"{n}" for n in variant_names])
-        for idx, t_name in enumerate(variant_names):
-            with ui_tabs[idx]:
-                df_cf = pd.DataFrame(detailed_tables[t_name])
+        if not detailed_tables:
+            st.info("No scenarios with financial data are available for comparison.")
+        else:
+            view_mode = st.radio(
+                "Comparison Mode:",
+                ["Single Scenario Details", "Compare Metric across Scenarios"],
+                horizontal=True,
+                key="tab3_cashflow_view_mode"
+            )
+            
+            variant_names = list(detailed_tables.keys())
+            
+            if "Single Scenario Details" in view_mode:
+                selected_var = st.selectbox(
+                    "Select Scenario to view detailed cashflow table:",
+                    variant_names,
+                    key="tab3_selected_var_detail"
+                )
+                if selected_var in detailed_tables:
+                    df_cf = pd.DataFrame(detailed_tables[selected_var])
+                    st.dataframe(
+                        df_cf.style.format({col: "{:,.0f} €" for col in df_cf.columns if "€" in col or "PV" in col or "Value" in col or "NPV" in col}),
+                        use_container_width=True, hide_index=True
+                    )
+            else:
+                first_df = pd.DataFrame(next(iter(detailed_tables.values())))
+                cols_to_compare = [col for col in first_df.columns if col != "Year"]
+                
+                selected_col = st.selectbox(
+                    "Select Financial Metric to compare across all scenarios:",
+                    cols_to_compare,
+                    key="tab3_selected_col_comparison"
+                )
+                
+                comparison_data = {"Year": first_df["Year"]}
+                for t_name in variant_names:
+                    df_cf = pd.DataFrame(detailed_tables[t_name])
+                    if selected_col in df_cf.columns:
+                        comparison_data[t_name] = df_cf[selected_col]
+                        
+                comp_df = pd.DataFrame(comparison_data)
                 st.dataframe(
-                    df_cf.style.format({col: "{:,.0f} €" for col in df_cf.columns if "€" in col or "PV" in col or "Value" in col or "NPV" in col}),
+                    comp_df.style.format({col: "{:,.0f} €" for col in comp_df.columns if col != "Year"}),
                     use_container_width=True, hide_index=True
                 )

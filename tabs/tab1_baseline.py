@@ -16,7 +16,7 @@ from tabs.tab1_components.upload import render_upload_ui
 from tabs.tab1_components.synthetic_load import render_synthetic_load_ui
 from tabs.tab1_components.manual import render_manual_builder
 from tabs.tab1_components.project_params import render_project_params
-from tabs.tab1_components.financial_ui import render_preset_selector, render_financial_inputs
+from tabs.tab1_components.financial_ui import render_preset_selector, render_financial_inputs, render_baseline_invoice_summary
 from tabs.tab1_components.chart import render_baseline_chart
 from tabs.tab1_components.validation_ui import validate_and_process_data
 
@@ -116,14 +116,12 @@ def render_tab1_baseline():
             "tariff_mode": "None (Consumption Only)"
         }
 
-    if st.session_state.get('enable_financials', False):
-        include_financials = st.toggle(
-            "Include Financial Data in Evaluation?",
-            value=saved_params.get('include_financials', False),
-            key=f"inc_fin_{active_baseline_name}"
-        )
-    else:
-        include_financials = False
+    if st.session_state.get('enable_financials', False) and contract_mode == "Real Contract Preset":
+        from tabs.tab3_components.tarrif_calc import render_tariff_builder_ui
+        render_tariff_builder_ui()
+        st.write("")
+
+    include_financials = st.session_state.get('enable_financials', False)
 
     if 'current_financial_metadata' not in st.session_state:
         st.session_state['current_financial_metadata'] = {}
@@ -215,6 +213,12 @@ def render_tab1_baseline():
             active_scenario_obj.original_profile, 
             active_scenario_obj.base_tariff.contracted_capacity_kw
         )
+
+        if active_scenario_obj.metadata.get('include_financials', False):
+            render_baseline_invoice_summary(
+                active_scenario_obj.original_profile,
+                active_scenario_obj.metadata.get('financial_metadata', {})
+            )
 
 # Die Funktion render_new_baseline_bridge wurde hier komplett GELÖSCHT,
 # da wir sie nicht mehr brauchen. Tab 1 ist jetzt 100% nativ auf Klassen!

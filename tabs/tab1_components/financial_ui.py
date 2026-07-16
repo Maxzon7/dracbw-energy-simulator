@@ -43,6 +43,35 @@ def render_preset_selector():
                         "contracted_capacity_kw": data.get("max_connection_capacity_kw", 100.0)
                     }
                     
+    # Merge custom tariffs from Tariff Configuration Manager
+    custom_presets = st.session_state.get('custom_tariffs', {})
+    for country, providers in custom_presets.items():
+        for provider_name, data in providers.items():
+            label = f"🛠️ [Custom] {country} | {provider_name}"
+            options.append(label)
+            
+            fixed_ann_conn = float(data.get("fixed_monthly_fee", 0.0) or 0.0) * 12.0
+            fixed_ann_trans = float(data.get("transport_fixed_fee", 0.0) or 0.0)
+            
+            if data.get("type") == "AC5_AC4":
+                kw_contract = float(data.get("kw_contract_price", 0.0) or 0.0)
+                kw_peak = float(data.get("kw_peak_penalty_price", 0.0) or 0.0)
+                kwh_price = float(data.get("kwh_transport_price", 0.0) or 0.0)
+            else:
+                kw_contract = 0.0
+                kw_peak = 0.0
+                kwh_price = float(data.get("flatrate_price", 0.0) or 0.0)
+                
+            mapping[label] = {
+                "fixed_annual_connection_fee": fixed_ann_conn,
+                "fixed_annual_transport_fee": fixed_ann_trans,
+                "contracted_capacity_fee_per_kw_year": kw_contract,
+                "peak_capacity_fee_per_kw_month": kw_peak,
+                "energy_price_normal_per_kwh": kwh_price,
+                "energy_price_laag_per_kwh": kwh_price,
+                "contracted_capacity_kw": 100.0
+            }
+                    
     sel = st.selectbox("⚡ Load Grid Operator Tariffs (Autofill)", options, help="Wähle einen Anbieter, um die Felder unten automatisch auszufüllen.")
     return sel, mapping.get(sel, None)
 
@@ -251,7 +280,16 @@ def calculate_year1_baseline_costs(df, fin_params):
     
     fixed_costs_y1 = fixed_conn_y1 + fixed_trans_y1 + contracted_cost_y1
     
-    return peak_costs_y1, energy_cost_y1, fixed_costs_y1
+    # Calculate monthly excess capacity penalties
+    excess_costs_y1 = 0.0
+    contract_price_yr = fin_params.get('contracted_capacity_fee_per_kw_year', 0.0)
+    contract_price_mo = contract_price_yr / 12.0
+    if contracted_kw > 0 and contract_price_mo > 0:
+        for m, peak in monthly_peaks.items():
+            if peak > contracted_kw:
+                excess_costs_y1 += (peak - contracted_kw) * contract_price_mo
+    
+    return peak_costs_y1, energy_cost_y1, fixed_costs_y1, excess_costs_y1
 
 def render_financial_projection(df: pd.DataFrame, fin_params: dict):
     if df is None or df.empty:
@@ -261,25 +299,83 @@ def render_financial_projection(df: pd.DataFrame, fin_params: dict):
         if 'contracted_capacity_fee_per_kw_year' not in fin_params:
             st.warning("⚠️ Legacy pricing detected. Please click 'Save Baseline' to upgrade.")
             
-        peak_costs_y1, energy_cost_y1, fixed_costs_y1 = calculate_year1_baseline_costs(df, fin_params)
+        peak_costs_y1, energy_cost_y1, fixed_costs_y1, excess_costs_y1 = calculate_year1_baseline_costs(df, fin_params)
         base_grid_capex = fin_params.get('baseline_grid_capex', 0.0)
         inflation = fin_params.get('inflation', 3.0) / 100.0
         
         years = list(range(1, 16))
-        e_costs, p_costs, f_costs = [], [], []
+        e_costs, p_costs, f_costs, ex_costs = [], [], [], []
         
         for y in years:
             multiplier = (1 + inflation) ** (y - 1)
             e_costs.append(energy_cost_y1 * multiplier)
             p_costs.append(peak_costs_y1 * multiplier)
             f_costs.append(fixed_costs_y1 * multiplier) 
+            ex_costs.append(excess_costs_y1 * multiplier)
             
         fig = go.Figure()
         fig.add_trace(go.Bar(x=years, y=f_costs, name="Fixed & Contracted Costs (€)", marker_color="#2c3e50"))
         fig.add_trace(go.Bar(x=years, y=e_costs, name="Energy Volume Cost (€)", marker_color="#3498db"))
         fig.add_trace(go.Bar(x=years, y=p_costs, name="Monthly Peak Penalties (€)", marker_color="#e74c3c"))
+        fig.add_trace(go.Bar(x=years, y=ex_costs, name="Excess Capacity Penalties (€)", marker_color="#e67e22"))
         
-        total_y1 = energy_cost_y1 + peak_costs_y1 + fixed_costs_y1
+        total_y1 = energy_cost_y1 + peak_costs_y1 + fixed_costs_y1 + excess_costs_y1
         
         fig.update_layout(barmode='stack', title=f"Base Year 1 Total Grid Costs: {total_y1:,.0f} €", height=350, margin=dict(l=0, r=0, t=40, b=0))
         st.plotly_chart(fig, use_container_width=True)
+
+def render_baseline_invoice_summary(df: pd.DataFrame, fin_params: dict):
+    if df is None or df.empty:
+        return
+        
+    with st.expander("🧾 Estimated Monthly Invoice Cost Breakdown", expanded=True):
+        st.info("Estimated average monthly billing structure under baseline conditions, modeled after standard industrial invoices.")
+        
+        # Calculate annual values
+        peak_costs_y1, energy_cost_y1, fixed_costs_y1, excess_costs_y1 = calculate_year1_baseline_costs(df, fin_params)
+        
+        # Unpack params
+        fixed_conn = float(fin_params.get('fixed_annual_connection_fee', 0.0) or 0.0)
+        fixed_trans = float(fin_params.get('fixed_annual_transport_fee', 0.0) or 0.0)
+        contracted_kw = float(fin_params.get('contracted_capacity_kw', 0.0) or 0.0)
+        contract_price = float(fin_params.get('contracted_capacity_fee_per_kw_year', 0.0) or 0.0)
+        
+        # Scale to monthly values
+        monthly_fixed = (fixed_conn + fixed_trans) / 12.0
+        monthly_capacity = (contracted_kw * contract_price) / 12.0
+        monthly_peak_penalty = peak_costs_y1 / 12.0
+        monthly_energy = energy_cost_y1 / 12.0
+        monthly_excess_penalty = excess_costs_y1 / 12.0
+        
+        net_subtotal = monthly_fixed + monthly_capacity + monthly_peak_penalty + monthly_energy + monthly_excess_penalty
+        
+        vat_tax = net_subtotal * 0.27
+        local_tax = net_subtotal * 0.125
+        gross_total = net_subtotal + vat_tax + local_tax
+        
+        # Display as columns and metrics
+        st.markdown("#### 1. Net Electrical Charges")
+        col_net1, col_net2 = st.columns(2)
+        with col_net1:
+            st.write(f"• Fixed Commercialization & Transport Fee: `€ {monthly_fixed:,.2f} / Mo`")
+            st.write(f"• Grid Capacity Charge ({contracted_kw:.1f} kW contracted): `€ {monthly_capacity:,.2f} / Mo`")
+        with col_net2:
+            st.write(f"• Peak Load Penalty (Peak Demand): `€ {monthly_peak_penalty:,.2f} / Mo`")
+            st.write(f"• Excess Capacity Penalty: `€ {monthly_excess_penalty:,.2f} / Mo`")
+            st.write(f"• Active Energy Volume Cost: `€ {monthly_energy:,.2f} / Mo`")
+            
+        st.markdown(f"**Net Electrical Subtotal: `€ {net_subtotal:,.2f} / Mo`**")
+        st.divider()
+        
+        st.markdown("#### 2. Taxes & Duties (Estimated)")
+        col_tax1, col_tax2 = st.columns(2)
+        with col_tax1:
+            st.write(f"• National VAT (27.0%): `€ {vat_tax:,.2f} / Mo`")
+        with col_tax2:
+            st.write(f"• Provincial & Municipal Taxes (12.5%): `€ {local_tax:,.2f} / Mo`")
+            
+        st.markdown(f"**Total Taxes Subtotal: `€ {vat_tax + local_tax:,.2f} / Mo`**")
+        st.divider()
+        
+        # Large highlighted metric for gross invoice total
+        st.metric(label="Estimated Average Monthly Bill (Gross)", value=f"€ {gross_total:,.2f} / Mo", help="Sum of net electrical charges plus national and local taxes.")

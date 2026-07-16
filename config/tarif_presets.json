@@ -49,5 +49,20 @@
           "max_connection_capacity_kw": 150
         }
       }
+    },
+    "Argentina": {
+      "EDEMSA": {
+        "T2 R MT (Mendoza - 430 kW)": {
+          "fixed_annual_connection_fee": 6169746.60,
+          "fixed_annual_transport_fee": 0.0,
+          "contracted_capacity_fee_per_kw_year": 487284.55,
+          "peak_capacity_fee_per_kw_month": 8554.44,
+          "energy_price_normal_per_kwh": 66.98,
+          "energy_price_laag_per_kwh": 66.10,
+          "max_connection_capacity_kw": 430.0,
+          "national_vat_pct": 27.0,
+          "local_tax_pct": 12.5
+        }
+      }
     }
-  }
+}

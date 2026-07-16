@@ -392,6 +392,71 @@ def render_financial_dashboard(selected_profiles: list, selected_base: str, vaul
         st.warning("Please configure and select at least one hardware variant (with CAPEX configured) to view the financial ROI analysis.")
 
 
+def calculate_annual_grid_bill_with_pillars(df, fin_params):
+    """
+    Calculates the exact annual grid bill using the 4-pillar grid tariff data.
+    Groups the load profile by month to calculate:
+      - Fixed Commercialization & Transport Fee
+      - Grid Capacity Charge (contracted kW)
+      - Peak Load Penalty (actual peaks per month)
+      - Excess Capacity Penalty (actual peak - contracted capacity)
+      - Active Energy Volume Cost
+    """
+    temp_df = df.copy()
+    
+    # Identify resolution and group by month
+    if 'timestamp' in temp_df.columns:
+        temp_df['timestamp'] = pd.to_datetime(temp_df['timestamp'])
+        temp_df['month'] = temp_df['timestamp'].dt.month
+        temp_df['is_normal'] = (temp_df['timestamp'].dt.dayofweek < 5) & (temp_df['timestamp'].dt.hour >= 7) & (temp_df['timestamp'].dt.hour < 23)
+        try:
+            delta = temp_df['timestamp'].iloc[1] - temp_df['timestamp'].iloc[0]
+            factor = 60 / (delta.seconds / 60)
+        except:
+            factor = 4.0
+    else:
+        res = len(temp_df) / 8760
+        pts_per_month = int(730 * res)
+        temp_df['month'] = (temp_df.index // pts_per_month) + 1
+        temp_df['month'] = temp_df['month'].clip(upper=12)
+        temp_df['is_normal'] = True 
+        factor = 4.0 if len(temp_df) == 35040 else 1.0
+
+    load_col = 'final_grid_load_kw' if 'final_grid_load_kw' in temp_df.columns else 'consumption_kw'
+    monthly_peaks = temp_df.groupby('month')[load_col].max()
+    
+    # Unpack grid operator parameters
+    fixed_conn = float(fin_params.get('fixed_annual_connection_fee', 0.0) or 0.0)
+    fixed_trans = float(fin_params.get('fixed_annual_transport_fee', 0.0) or 0.0)
+    contracted_kw = float(fin_params.get('contracted_capacity_kw', 0.0) or 0.0)
+    contract_price_yr = float(fin_params.get('contracted_capacity_fee_per_kw_year', 0.0) or 0.0)
+    peak_price_mo = float(fin_params.get('peak_capacity_fee_per_kw_month', 0.0) or 0.0)
+    
+    energy_price_norm = float(fin_params.get('energy_price_normal_per_kwh', 0.0) or 0.0)
+    energy_price_laag = float(fin_params.get('energy_price_laag_per_kwh', 0.0) or 0.0)
+    
+    # 1. Fixed connection + transport + contracted capacity
+    annual_fixed = fixed_conn + fixed_trans + (contracted_kw * contract_price_yr)
+    
+    # 2. Peak load penalty
+    annual_peak = monthly_peaks.sum() * peak_price_mo
+    
+    # 3. Excess capacity penalty
+    annual_excess = 0.0
+    contract_price_mo = contract_price_yr / 12.0
+    if contracted_kw > 0 and contract_price_mo > 0:
+        for m, peak in monthly_peaks.items():
+            if peak > contracted_kw:
+                annual_excess += (peak - contracted_kw) * contract_price_mo
+                
+    # 4. Energy cost
+    energy_normal = temp_df[temp_df['is_normal']][load_col].sum() / factor
+    energy_laag = temp_df[~temp_df['is_normal']][load_col].sum() / factor if 'is_normal' in temp_df.columns else 0.0
+    annual_energy = (energy_normal * energy_price_norm) + (energy_laag * energy_price_laag)
+    
+    return annual_fixed + annual_peak + annual_excess + annual_energy
+
+
 def generate_15_year_cashflow(sub_scenario: SubScenario, base_scenario: BaseScenario, discount_rate: float = 0.05, capex_mult: float = 1.0, energy_esc_add: float = 0.0, diesel_esc_add: float = 0.0) -> pd.DataFrame:
     """
     Calculates year-by-year cashflow series comparing sub-scenario configurations against the baseline.
@@ -439,25 +504,23 @@ def generate_15_year_cashflow(sub_scenario: SubScenario, base_scenario: BaseScen
     fit = float(fin_meta.get('feed_in_tariff', 0.08))
     diesel_price = float(fin_meta.get('diesel_price', 1.50))
     
-    base_grid_bill = (
-        base_tariff.fixed_costs_per_year +
-        (base_kwh * base_tariff.price_per_kwh) +
-        (base_peak * base_tariff.price_per_kw_peak)
-    )
+    # Calculate exact baseline grid bill using pillars
+    base_grid_bill = calculate_annual_grid_bill_with_pillars(base_df, fin_meta)
     
     # Year 1 Sub-Scenario grid costs (including custom tariff overrides)
-    sub_tariff = sub_scenario.custom_tariff if sub_scenario.custom_tariff else base_scenario.base_tariff
-    
-    sub_kwh = sub_df['final_grid_load_kw'].clip(lower=0.0).sum() / factor
-    sub_peak = sub_df['final_grid_load_kw'].max()
     sub_export = sub_df.get('grid_feed_in_kw', pd.Series([0.0])).sum() / factor
     
-    sub_grid_bill = (
-        sub_tariff.fixed_costs_per_year +
-        (sub_kwh * sub_tariff.price_per_kwh) +
-        (sub_peak * sub_tariff.price_per_kw_peak) -
-        (sub_export * fit)
-    )
+    # Parse sub-scenario financial/grid parameters
+    if sub_scenario.tech_params and 'grid' in sub_scenario.tech_params and 'data' in sub_scenario.tech_params['grid']:
+        sub_fin_params = sub_scenario.tech_params['grid']['data'].copy()
+        if 'contracted_capacity_kw' not in sub_fin_params:
+            sub_fin_params['contracted_capacity_kw'] = sub_scenario.tech_params['grid'].get('new_grid_limit_kw', 100.0)
+    else:
+        sub_fin_params = fin_meta.copy()
+        if sub_scenario.tech_params and 'grid' in sub_scenario.tech_params:
+            sub_fin_params['contracted_capacity_kw'] = sub_scenario.tech_params['grid'].get('new_grid_limit_kw', 100.0)
+            
+    sub_grid_bill = calculate_annual_grid_bill_with_pillars(sub_df, sub_fin_params) - (sub_export * fit)
     
     # Backup generator costs
     annual_fuel_l = sub_df.get('generator_fuel_l', pd.Series([0.0])).sum()
@@ -524,6 +587,12 @@ def generate_15_year_cashflow(sub_scenario: SubScenario, base_scenario: BaseScen
     df["Generator Fuel (€)"] = fuel_liste
     df["Generator Rental (€)"] = miete_liste
     df["Generator Maintenance (€)"] = maintenance_liste
+    
+    grid_costs_liste = [0.0]
+    for jahr in range(1, lifespan + 1):
+        grid_multiplier = (1.0 + energy_esc) ** (jahr - 1)
+        grid_costs_liste.append(-sub_grid_bill * grid_multiplier)
+    df["Grid Costs (€)"] = grid_costs_liste
     
     df["CAPEX (€)"] = df["CAPEX (€)"] + capex_replacements
     

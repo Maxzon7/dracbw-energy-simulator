@@ -140,7 +140,7 @@ def render_battery_ui(scenario_id: str, default_grid_limit: float = 120.0, exist
 
     if st.session_state.get('enable_financials', False):
         st.divider()
-        with st.expander("Financial Estimates (CAPEX, OPEX & Lifecycle)", expanded=False):
+        with st.expander("Financial Estimates (CAPEX, OPEX & Lifecycle)", expanded=True):
             st.write("Configure the estimated capital expenditure, maintenance costs, and physical wear.")
             c_fin1, c_fin2, c_fin3, c_fin4 = st.columns(4)
             
