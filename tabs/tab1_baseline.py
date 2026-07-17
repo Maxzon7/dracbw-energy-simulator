@@ -67,7 +67,8 @@ def render_tab1_baseline():
         "Real Contract Preset", 
         "Generic AC Connection Tier", 
         "Generic Grid Limit (No Contract)", 
-        "No Contract (Consumption Only)"
+        "No Contract (Consumption Only)",
+        "Universal Multi-Pillar Tariff"
     ]
     mode_idx = contract_modes.index(saved_mode) if saved_mode in contract_modes else 0
     contract_mode = st.radio(
@@ -117,6 +118,11 @@ def render_tab1_baseline():
             "energy_price_laag_per_kwh": 0.0,
             "contracted_capacity_kw": 0.0,
             "tariff_mode": "None (Consumption Only)"
+        }
+    elif contract_mode == "Universal Multi-Pillar Tariff":
+        preset_label = "Universal Multi-Pillar Tariff"
+        preset_data = {
+            "tariff_mode": "Universal Multi-Pillar Tariff"
         }
 
     if st.session_state.get('enable_financials', False) and contract_mode == "Real Contract Preset" and preset_label == "🛠️ Custom Tariff":
@@ -180,19 +186,18 @@ def render_tab1_baseline():
         # --- 3. PROJECT META & FINANZEN ---
         st.write("### 📊 3. Project Meta & Financial Configuration")
 
-        with st.form("baseline_form"):
-            proj_params = render_project_params(saved_params, active_baseline_name)
+        proj_params = render_project_params(saved_params, active_baseline_name)
 
-            st.divider()
-            working_fin = saved_params.get('financial_metadata', {}).copy()
-            if preset_data:
-                working_fin.update(preset_data)
-            working_fin['tariff_mode'] = preset_label
+        st.divider()
+        working_fin = saved_params.get('financial_metadata', {}).copy()
+        if preset_data:
+            working_fin.update(preset_data)
+        working_fin['tariff_mode'] = preset_label
 
-            fin_params = render_financial_inputs(working_fin, include_financials, contract_mode)
+        fin_params = render_financial_inputs(working_fin, include_financials, contract_mode)
 
-            st.divider()
-            submit_btn = st.form_submit_button("💾 Process & Save Baseline Profile", type="primary", use_container_width=True)
+        st.divider()
+        submit_btn = st.button("💾 Process & Save Baseline Profile", type="primary", use_container_width=True)
 
         if submit_btn:
             st.session_state['current_financial_metadata'] = fin_params

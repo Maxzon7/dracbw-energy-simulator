@@ -139,11 +139,365 @@ def get_generic_ac_presets() -> dict:
         }
     }
 
+def render_universal_multipillar_inputs(working_fin: dict, include_financials: bool = True) -> dict:
+    """
+    Renders the Universal Multi-Pillar Grid Tariff Engine inputs inside tab1 baseline.
+    """
+    if not include_financials:
+        st.markdown("##### 🔌 Connection Capacity Setup")
+        jan_cap_limit = st.number_input(
+            "Contracted Capacity Limit (kW)", 
+            value=float(working_fin.get('contracted_capacity_kw', 100.0)), 
+            min_value=0.0, 
+            step=10.0,
+            key="mp_cap_limit_nofin"
+        )
+        st.caption("Financial fields are hidden. You can enable them above.")
+        return {
+            "tariff_mode": "Universal Multi-Pillar Tariff",
+            "contracted_capacity_kw": jan_cap_limit,
+            "lifespan_years": 15,
+            "energy_price_growth": 4.0,
+            "diesel_price_growth": 2.0,
+            "inflation": 4.0
+        }
+
+    st.markdown("### 🏛️ Universal Multi-Pillar Grid Tariff Engine")
+    st.caption("Configure multi-layered capacity penalties, time-of-use energy zones, and late-stage fiscal surcharges.")
+
+    saved_sched = working_fin.get('monthly_tariff_schedule', {})
+    def get_m_data(month_num):
+        return saved_sched.get(str(month_num), {}) or saved_sched.get(month_num, {})
+        
+    jan_data = get_m_data(1)
+
+    st.markdown("##### 📅 2.1 The Master Cascade Control")
+    use_jan_default = st.checkbox(
+        "Use January as global 12-Month contract template",
+        value=bool(working_fin.get('use_jan_default', True) if 'use_jan_default' in working_fin else jan_data.get('use_jan_default', True)),
+        key="mp_use_jan_default",
+        help="If selected, replicates January's parameters across the entire 12-month array. Uncheck to configure monthly variations."
+    )
+
+    st.markdown("#### 📅 Month 1: January (Template)")
+    
+    col_p1, col_p2 = st.columns(2)
+    jan_base = col_p1.number_input(
+        "Pillar 1: Fixed Service Charges (€/Month)",
+        value=float(jan_data.get('base_fee', 0.0)),
+        step=50.0,
+        key="mp_jan_base",
+        help="Fixed monthly service fee (Cargo Comercialización / Transporte), billed regardless of load or energy."
+    )
+    jan_cap_limit = col_p2.number_input(
+        "Pillar 2: Contracted Capacity Limit (kW)",
+        value=float(jan_data.get('contracted_capacity_kw', working_fin.get('contracted_capacity_kw', 100.0))),
+        min_value=0.0,
+        step=10.0,
+        key="mp_jan_cap_limit",
+        help="Baseline capacity ceiling authorized by contract (Potencia Contratada / Uso de Red)."
+    )
+    
+    col_p2_pr, col_p3 = st.columns(2)
+    jan_cap_price = col_p2_pr.number_input(
+        "Pillar 2: Contracted Capacity Price (€/kW/Month)",
+        value=float(jan_data.get('contracted_capacity_price', 0.0)),
+        min_value=0.0,
+        step=1.0,
+        key="mp_jan_cap_price",
+        help="Price per kW of contracted capacity limit."
+    )
+    jan_peak_penalty = col_p3.number_input(
+        "Pillar 3: Measured Peak Charge (€/kW/Month)",
+        value=float(jan_data.get('peak_penalty_price', 0.0)),
+        min_value=0.0,
+        step=1.0,
+        key="mp_jan_peak_penalty",
+        help="Fee charged against the single highest peak load registered in that month (Consumo de Potencia)."
+    )
+    
+    col_p4, = st.columns(1)
+    jan_excess = col_p4.number_input(
+        "Pillar 4: Excess Power Penalty Price (€/kW/Month)",
+        value=float(jan_data.get('excess_penalty_price', 0.0)),
+        min_value=0.0,
+        step=1.0,
+        key="mp_jan_excess",
+        help="Financial penalty rate applied to the kW exceeding the contracted capacity limit (Exceso de Potencia). Billed at severe penalty rates."
+    )
+
+    st.markdown("##### 🕒 2.3 Time-of-Use Volumetric Energy Pillars")
+    enable_tou = st.checkbox(
+        "Enable Time-of-Use Energy Pricing",
+        value=bool(jan_data.get('enable_tou', True)),
+        key="mp_jan_enable_tou",
+        help="Enable time-of-day tiered rates (Pico, Valle, Resto) instead of a flat energy price."
+    )
+    
+    if enable_tou:
+        st.markdown("**Energy Tariff Price Zones (Time-of-Use)**")
+        jc_tou1, jc_tou2, jc_tou3 = st.columns(3)
+        alta_pr = jc_tou1.number_input("Pico Price (€/kWh)", value=float(jan_data.get('alta', {}).get('price', 0.15)), step=0.01, key="mp_jan_alta_pr", help="Active energy price during peak/high-load hours (Energía Pico).")
+        alta_start = jc_tou2.number_input("Pico Start Hour", min_value=0, max_value=23, value=int(jan_data.get('alta', {}).get('start_hour', 18)), step=1, key="mp_jan_alta_st")
+        alta_end = jc_tou3.number_input("Pico End Hour", min_value=0, max_value=23, value=int(jan_data.get('alta', {}).get('end_hour', 23)), step=1, key="mp_jan_alta_ed")
+        
+        jc_tou4, jc_tou5, jc_tou6 = st.columns(3)
+        baja_pr = jc_tou4.number_input("Valle Price (€/kWh)", value=float(jan_data.get('baja', {}).get('price', 0.10)), step=0.01, key="mp_jan_baja_pr", help="Active energy price during off-peak/night hours (Energía Valle).")
+        baja_start = jc_tou5.number_input("Valle Start Hour", min_value=0, max_value=23, value=int(jan_data.get('baja', {}).get('start_hour', 23)), step=1, key="mp_jan_baja_st")
+        baja_end = jc_tou6.number_input("Valle End Hour", min_value=0, max_value=23, value=int(jan_data.get('baja', {}).get('end_hour', 5)), step=1, key="mp_jan_baja_ed")
+        
+        jc_tou7, = st.columns(1)
+        resto_pr = jc_tou7.number_input("Resto Price (€/kWh)", value=float(jan_data.get('resto', {}).get('price', 0.12)), step=0.01, key="mp_jan_resto_pr", help="Active energy price for remaining hours (Energía Resto).")
+        flat_energy_price = 0.0
+    else:
+        flat_energy_price = st.number_input("Flat Energy Price (€/kWh)", value=float(jan_data.get('energy_price_normal', 0.15)), step=0.01, key="mp_jan_flat_ee", help="Flat rate price per kWh of energy consumed.")
+        alta_pr, alta_start, alta_end = flat_energy_price, 18, 23
+        baja_pr, baja_start, baja_end = flat_energy_price, 23, 5
+        resto_pr = flat_energy_price
+
+    st.markdown("##### 📊 2.4 Fiscal Surcharges & Credits Block")
+    col_f1, = st.columns(1)
+    jan_vat = col_f1.number_input("National VAT Surcharge (%)", value=float(jan_data.get('tax_pct', 27.0)), step=1.0, key="mp_jan_vat", help="National VAT percentage applied to the net invoice subtotal.")
+    
+    default_jan_prov = jan_data.get('provincial_taxes', [
+        {"Tax Name": "Sobretasa Provincial Ley 2539", "Rate (%)": 1.0},
+        {"Tax Name": "Tasa fisc. y Control", "Rate (%)": 1.5},
+        {"Tax Name": "CCCE Ley 6497", "Rate (%)": 9.0}
+    ])
+    st.markdown("**Provincial Taxes Breakdown (%)**")
+    prov_df = pd.DataFrame(default_jan_prov)
+    edited_prov = st.data_editor(
+        prov_df,
+        num_rows="dynamic",
+        key="mp_jan_prov_editor"
+    )
+    jan_prov_taxes = edited_prov.to_dict('records')
+
+    default_jan_adj = jan_data.get('custom_adjustments', [
+        {"Charge Name": "Cargo AP Municipal", "Amount (€)": 43091.0, "Is Pre-tax": False},
+        {"Charge Name": "Seasonal Adjustment Net", "Amount (€)": 5198935.55, "Is Pre-tax": False},
+        {"Charge Name": "Redondeo", "Amount (€)": -0.85, "Is Pre-tax": False}
+    ])
+    st.markdown("**Custom Charges & Adjustments (€/Month)**")
+    adj_df = pd.DataFrame(default_jan_adj)
+    edited_adj = st.data_editor(
+        adj_df,
+        num_rows="dynamic",
+        key="mp_jan_adj_editor"
+    )
+    jan_adjustments = edited_adj.to_dict('records')
+
+    jan_sched = {
+        "base_fee": jan_base,
+        "contracted_capacity_kw": jan_cap_limit,
+        "contracted_capacity_price": jan_cap_price,
+        "peak_penalty_price": jan_peak_penalty,
+        "excess_penalty_price": jan_excess,
+        "enable_tou": enable_tou,
+        "energy_price_normal": flat_energy_price,
+        "alta": {"price": alta_pr, "start_hour": alta_start, "end_hour": alta_end},
+        "baja": {"price": baja_pr, "start_hour": baja_start, "end_hour": baja_end},
+        "resto": {"price": resto_pr},
+        "tax_pct": jan_vat,
+        "provincial_taxes": jan_prov_taxes,
+        "custom_adjustments": jan_adjustments
+    }
+
+    monthly_schedule = {"1": jan_sched}
+    
+    if not use_jan_default:
+        months_list = ["February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+        saved_overrides = []
+        for m in range(2, 13):
+            if str(m) in saved_sched or m in saved_sched:
+                saved_overrides.append(months_list[m-2])
+                
+        overridden_months = st.multiselect(
+            "Select Months with Custom Overrides:", 
+            options=months_list, 
+            default=saved_overrides, 
+            key="mp_overrides"
+        )
+        
+        for m in range(2, 13):
+            m_name = months_list[m-2]
+            if m_name in overridden_months:
+                st.write("---")
+                with st.expander(f"📅 Configuration for {m_name}", expanded=True):
+                    m_data = get_m_data(m)
+                    if not m_data:
+                        m_data = jan_sched.copy()
+                        
+                    mc1, mc2 = st.columns(2)
+                    m_base = mc1.number_input(f"Fixed Service Charges (€/Mo) - {m_name}", value=float(m_data.get('base_fee', jan_base)), step=50.0, key=f"mp_base_{m}")
+                    m_cap_limit = mc2.number_input(f"Contracted Capacity Limit (kW) - {m_name}", value=float(m_data.get('contracted_capacity_kw', jan_cap_limit)), step=10.0, key=f"mp_cap_lim_{m}")
+                    
+                    mc_c_pr, mc_pk = st.columns(2)
+                    m_cap_price = mc_c_pr.number_input(f"Contracted Capacity Price (€/kW/Mo) - {m_name}", value=float(m_data.get('contracted_capacity_price', jan_cap_price)), step=1.0, key=f"mp_cap_pr_{m}")
+                    m_peak_penalty = mc_pk.number_input(f"Measured Peak Charge (€/kW/Mo) - {m_name}", value=float(m_data.get('peak_penalty_price', jan_peak_penalty)), step=1.0, key=f"mp_peak_pen_{m}")
+                    
+                    mc_ex = st.columns(1)[0]
+                    m_excess = mc_ex.number_input(f"Excess Power Penalty Price (€/kW/Mo) - {m_name}", value=float(m_data.get('excess_penalty_price', jan_excess)), step=1.0, key=f"mp_ex_{m}")
+                    
+                    m_enable_tou = st.checkbox(f"Enable Time-of-Use Energy Pricing - {m_name}", value=bool(m_data.get('enable_tou', enable_tou)), key=f"mp_tou_en_{m}")
+                    
+                    if m_enable_tou:
+                        mc_tou1, mc_tou2, mc_tou3 = st.columns(3)
+                        m_alta_pr = mc_tou1.number_input(f"Pico Price (€/kWh) - {m_name}", value=float(m_data.get('alta', {}).get('price', alta_pr)), step=0.01, key=f"mp_alta_pr_{m}")
+                        m_alta_start = mc_tou2.number_input(f"Pico Start Hour - {m_name}", min_value=0, max_value=23, value=int(m_data.get('alta', {}).get('start_hour', alta_start)), step=1, key=f"mp_alta_st_{m}")
+                        m_alta_end = mc_tou3.number_input(f"Pico End Hour - {m_name}", min_value=0, max_value=23, value=int(m_data.get('alta', {}).get('end_hour', alta_end)), step=1, key=f"mp_alta_ed_{m}")
+                        
+                        mc_tou4, mc_tou5, mc_tou6 = st.columns(3)
+                        m_baja_pr = mc_tou4.number_input(f"Valle Price (€/kWh) - {m_name}", value=float(m_data.get('baja', {}).get('price', baja_pr)), step=0.01, key=f"mp_baja_pr_{m}")
+                        m_baja_start = mc_tou5.number_input(f"Valle Start Hour - {m_name}", min_value=0, max_value=23, value=int(m_data.get('baja', {}).get('start_hour', baja_start)), step=1, key=f"mp_baja_st_{m}")
+                        m_baja_end = mc_tou6.number_input(f"Valle End Hour - {m_name}", min_value=0, max_value=23, value=int(m_data.get('baja', {}).get('end_hour', baja_end)), step=1, key=f"mp_baja_ed_{m}")
+                        
+                        mc_tou7 = st.columns(1)[0]
+                        m_resto_pr = mc_tou7.number_input(f"Resto Price (€/kWh) - {m_name}", value=float(m_data.get('resto', {}).get('price', resto_pr)), step=0.01, key=f"mp_resto_pr_{m}")
+                        m_flat_ee = 0.0
+                    else:
+                        m_flat_ee = st.number_input(f"Flat Energy Price (€/kWh) - {m_name}", value=float(m_data.get('energy_price_normal', flat_energy_price)), step=0.01, key=f"mp_flat_ee_{m}")
+                        m_alta_pr, m_alta_start, m_alta_end = m_flat_ee, 18, 23
+                        m_baja_pr, m_baja_start, m_baja_end = m_flat_ee, 23, 5
+                        m_resto_pr = m_flat_ee
+                        
+                    mc_f1, = st.columns(1)
+                    m_vat = mc_f1.number_input(f"National VAT (%) - {m_name}", value=float(m_data.get('tax_pct', jan_vat)), step=1.0, key=f"mp_vat_{m}")
+                    
+                    default_m_prov = m_data.get('provincial_taxes', jan_prov_taxes)
+                    st.write(f"**Provincial Taxes Breakdown (%) - {m_name}**")
+                    m_prov_df = pd.DataFrame(default_m_prov)
+                    m_edited_prov = st.data_editor(
+                        m_prov_df,
+                        num_rows="dynamic",
+                        key=f"mp_prov_editor_{m}"
+                    )
+                    m_prov_taxes = m_edited_prov.to_dict('records')
+                    
+                    default_m_adj = m_data.get('custom_adjustments', jan_adjustments)
+                    st.write(f"**Custom Charges & Adjustments (€/Month) - {m_name}**")
+                    m_adj_df = pd.DataFrame(default_m_adj)
+                    m_edited_adj = st.data_editor(
+                        m_adj_df,
+                        num_rows="dynamic",
+                        key=f"mp_adj_editor_{m}"
+                    )
+                    m_adjustments = m_edited_adj.to_dict('records')
+                    
+                    monthly_schedule[str(m)] = {
+                        "base_fee": m_base,
+                        "contracted_capacity_kw": m_cap_limit,
+                        "contracted_capacity_price": m_cap_price,
+                        "peak_penalty_price": m_peak_penalty,
+                        "excess_penalty_price": m_excess,
+                        "enable_tou": m_enable_tou,
+                        "energy_price_normal": m_flat_ee,
+                        "alta": {"price": m_alta_pr, "start_hour": m_alta_start, "end_hour": m_alta_end},
+                        "baja": {"price": m_baja_pr, "start_hour": m_baja_start, "end_hour": m_baja_end},
+                        "resto": {"price": m_resto_pr},
+                        "tax_pct": m_vat,
+                        "provincial_taxes": m_prov_taxes,
+                        "custom_adjustments": m_adjustments
+                    }
+            else:
+                monthly_schedule[str(m)] = jan_sched.copy()
+    else:
+        for m in range(2, 13):
+            monthly_schedule[str(m)] = jan_sched.copy()
+
+    st.divider()
+    st.markdown("##### ⚙️ Project Specifics & Infrastructure")
+    
+    col_s1, col_s2 = st.columns(2)
+    base_capex = col_s1.number_input(
+        "Baseline Grid CAPEX (€)", 
+        value=float(working_fin.get('baseline_grid_capex', 0.0)), 
+        step=1000.0,
+        key="mp_capex"
+    )
+    feed_in = col_s2.number_input(
+        "Feed-in Tariff (€/kWh)", 
+        value=float(working_fin.get('feed_in_tariff', 0.08)), 
+        step=0.01,
+        key="mp_fit"
+    )
+    
+    col_s3, col_s4 = st.columns(2)
+    inflation = col_s3.slider(
+        "General Inflation (%)", 
+        min_value=0.0, 
+        max_value=20.0, 
+        value=float(working_fin.get('inflation', 4.0)), 
+        step=0.5,
+        key="mp_inflation",
+        help="Stable general inflation rate. Standard is 4%."
+    )
+    diesel = col_s4.number_input(
+        "Diesel Price (€/L)", 
+        value=float(working_fin.get('diesel_price', 1.50)), 
+        step=0.05,
+        key="mp_diesel"
+    )
+    
+    col_s5, col_s6 = st.columns(2)
+    lifespan_years = col_s5.number_input(
+        "Project Lifespan (Years)", 
+        value=int(working_fin.get('lifespan_years', 15)), 
+        min_value=1, 
+        max_value=25, 
+        step=1,
+        key="mp_lifespan"
+    )
+    
+    col_s7, col_s8 = st.columns(2)
+    energy_price_growth = col_s7.slider(
+        "Electricity Tariff Escalation (%/Yr)", 
+        min_value=0.0, 
+        max_value=20.0, 
+        value=float(working_fin.get('energy_price_growth', 4.0)), 
+        step=0.5,
+        key="mp_ee_esc"
+    )
+    diesel_price_growth = col_s8.slider(
+        "Diesel Price Escalation (%/Yr)", 
+        min_value=0.0, 
+        max_value=20.0, 
+        value=float(working_fin.get('diesel_price_growth', 2.0)), 
+        step=0.5,
+        key="mp_di_esc"
+    )
+
+    return {
+        "tariff_mode": "Universal Multi-Pillar Tariff",
+        "use_jan_default": use_jan_default,
+        "monthly_tariff_schedule": monthly_schedule,
+        "fixed_annual_connection_fee": jan_base * 12.0,
+        "fixed_annual_transport_fee": 0.0,
+        "contracted_capacity_kw": jan_cap_limit,
+        "contracted_capacity_fee_per_kw_year": jan_cap_price * 12.0,
+        "peak_capacity_fee_per_kw_month": jan_peak_penalty,
+        "energy_price_normal_per_kwh": resto_pr,
+        "energy_price_laag_per_kwh": baja_pr,
+        "baseline_grid_capex": base_capex,
+        "feed_in_tariff": feed_in,
+        "inflation": inflation,
+        "diesel_price": diesel,
+        "lifespan_years": lifespan_years,
+        "energy_price_growth": energy_price_growth,
+        "diesel_price_growth": diesel_price_growth,
+        "national_vat_pct": jan_vat,
+        "local_tax_pct": sum(float(p.get('Rate (%)', 0.0) or 0.0) for p in jan_prov_taxes),
+        "energy_charge": resto_pr,
+        "demand_charge": jan_cap_price * 12.0
+    }
+
 def render_financial_inputs(working_fin: dict, include_financials: bool = True, contract_mode: str = "Real Contract Preset") -> dict:
     """
     Renders the manual input fields INSIDE the form.
     Receives 'working_fin' which contains either the loaded preset or the saved vault data.
     """
+    if contract_mode == "Universal Multi-Pillar Tariff":
+        return render_universal_multipillar_inputs(working_fin, include_financials)
     contracted_kw = float(working_fin.get('contracted_capacity_kw', 100.0))
     fixed_conn = float(working_fin.get('fixed_annual_connection_fee', 0.0))
     fixed_trans = float(working_fin.get('fixed_annual_transport_fee', 0.0))
@@ -184,53 +538,53 @@ def render_financial_inputs(working_fin: dict, include_financials: bool = True, 
         
         st.markdown("#### 📅 Month 1: January (Template)")
         jc1, jc2 = st.columns(2)
-        jan_base = jc1.number_input("Base Connection Fee (€/Mo)", value=float(jan_data.get('base_fee', 0.0)), step=100.0, key=f"jan_base_{contract_mode}")
-        jan_cap_limit = jc2.number_input("Contracted Capacity Limit (kW)", value=float(jan_data.get('contracted_capacity_kw', contracted_kw)), step=10.0, key=f"jan_cap_lim_{contract_mode}")
+        jan_base = jc1.number_input("Base Connection Fee (€/Mo)", value=float(jan_data.get('base_fee', 0.0)), step=100.0, key=f"jan_base_{contract_mode}", help="Fixed basic fee charged every month regardless of electricity consumption.")
+        jan_cap_limit = jc2.number_input("Contracted Capacity Limit (kW)", value=float(jan_data.get('contracted_capacity_kw', contracted_kw)), step=10.0, key=f"jan_cap_lim_{contract_mode}", help="The capacity limit in kW agreed upon in your contract. If your actual load exceeds this, penalty fees are charged.")
         
         # Checkbox for Time-of-Use pricing
-        enable_tou = st.checkbox("Enable Time-of-Use Energy Pricing (Alta/Baja/Resto)", value=bool(jan_data.get('enable_tou', False)), key=f"jan_tou_en_{contract_mode}")
+        enable_tou = st.checkbox("Enable Time-of-Use Energy Pricing (Alta/Baja/Resto)", value=bool(jan_data.get('enable_tou', False)), key=f"jan_tou_en_{contract_mode}", help="Check this to enable time-of-use pricing bands (Alta, Baja, Resto) instead of a single flat rate.")
         
         if enable_tou:
             jan_cap_price = 0.0
             
             st.markdown("**Energy Tariff Price Zones (Time-of-Use)**")
             jc_tou1, jc_tou2, jc_tou3 = st.columns(3)
-            alta_pr = jc_tou1.number_input("Alta Price (€/kWh)", value=float(jan_data.get('alta', {}).get('price', 0.15)), step=0.01, key=f"jan_alta_pr_{contract_mode}")
-            alta_start = jc_tou2.number_input("Alta Start Hour", min_value=0, max_value=23, value=int(jan_data.get('alta', {}).get('start_hour', 18)), step=1, key=f"jan_alta_st_{contract_mode}")
-            alta_end = jc_tou3.number_input("Alta End Hour", min_value=0, max_value=23, value=int(jan_data.get('alta', {}).get('end_hour', 23)), step=1, key=f"jan_alta_ed_{contract_mode}")
+            alta_pr = jc_tou1.number_input("Alta Price (€/kWh)", value=float(jan_data.get('alta', {}).get('price', 0.15)), step=0.01, key=f"jan_alta_pr_{contract_mode}", help="Active energy price during peak/high-load hours (Alta).")
+            alta_start = jc_tou2.number_input("Alta Start Hour", min_value=0, max_value=23, value=int(jan_data.get('alta', {}).get('start_hour', 18)), step=1, key=f"jan_alta_st_{contract_mode}", help="Starting hour of the Alta pricing window (e.g. 18 for 18:00).")
+            alta_end = jc_tou3.number_input("Alta End Hour", min_value=0, max_value=23, value=int(jan_data.get('alta', {}).get('end_hour', 23)), step=1, key=f"jan_alta_ed_{contract_mode}", help="Ending hour of the Alta pricing window (e.g. 23 for 23:00).")
             
             jc_tou4, jc_tou5, jc_tou6 = st.columns(3)
-            baja_pr = jc_tou4.number_input("Baja Price (€/kWh)", value=float(jan_data.get('baja', {}).get('price', 0.10)), step=0.01, key=f"jan_baja_pr_{contract_mode}")
-            baja_start = jc_tou5.number_input("Baja Start Hour", min_value=0, max_value=23, value=int(jan_data.get('baja', {}).get('start_hour', 23)), step=1, key=f"jan_baja_st_{contract_mode}")
-            baja_end = jc_tou6.number_input("Baja End Hour", min_value=0, max_value=23, value=int(jan_data.get('baja', {}).get('end_hour', 5)), step=1, key=f"jan_baja_ed_{contract_mode}")
+            baja_pr = jc_tou4.number_input("Baja Price (€/kWh)", value=float(jan_data.get('baja', {}).get('price', 0.10)), step=0.01, key=f"jan_baja_pr_{contract_mode}", help="Active energy price during off-peak/night hours (Baja).")
+            baja_start = jc_tou5.number_input("Baja Start Hour", min_value=0, max_value=23, value=int(jan_data.get('baja', {}).get('start_hour', 23)), step=1, key=f"jan_baja_st_{contract_mode}", help="Starting hour of the Baja pricing window (e.g. 23 for 23:00).")
+            baja_end = jc_tou6.number_input("Baja End Hour", min_value=0, max_value=23, value=int(jan_data.get('baja', {}).get('end_hour', 5)), step=1, key=f"jan_baja_ed_{contract_mode}", help="Ending hour of the Baja pricing window (e.g. 5 for 05:00).")
             
             jc_tou7, = st.columns(1)
-            resto_pr = jc_tou7.number_input("Resto Price (€/kWh)", value=float(jan_data.get('resto', {}).get('price', 0.12)), step=0.01, key=f"jan_resto_pr_{contract_mode}")
+            resto_pr = jc_tou7.number_input("Resto Price (€/kWh)", value=float(jan_data.get('resto', {}).get('price', 0.12)), step=0.01, key=f"jan_resto_pr_{contract_mode}", help="Active energy price for all remaining hours outside Alta and Baja (Resto).")
             
             jc_pen1, jc_pen2 = st.columns(2)
-            jan_peak_penalty = jc_pen1.number_input("Peak Penalty Price (€/kW/Mo)", value=float(jan_data.get('peak_penalty_price', 0.0)), step=10.0, key=f"jan_peak_pen_{contract_mode}")
-            jan_excess = jc_pen2.number_input("Excess Penalty Price (€/kW/Mo)", value=float(jan_data.get('excess_penalty_price', 0.0)), step=10.0, key=f"jan_ex_{contract_mode}")
+            jan_peak_penalty = jc_pen1.number_input("Peak Penalty Price (€/kW/Mo)", value=float(jan_data.get('peak_penalty_price', 0.0)), step=10.0, key=f"jan_peak_pen_{contract_mode}", help="Fee charged per kW of the maximum measured peak load during the month.")
+            jan_excess = jc_pen2.number_input("Excess Penalty Price (€/kW/Mo)", value=float(jan_data.get('excess_penalty_price', 0.0)), step=10.0, key=f"jan_ex_{contract_mode}", help="Penalty fee charged per kW by which your actual peak load exceeded your contracted capacity limit.")
             flat_energy_price = 0.0
         else:
             jc3, jc4 = st.columns(2)
-            jan_cap_price = jc3.number_input("Contracted Capacity Price (€/kW/Mo)", value=float(jan_data.get('contracted_capacity_price', 0.0)), step=1.0, key=f"jan_cap_pr_{contract_mode}")
+            jan_cap_price = jc3.number_input("Contracted Capacity Price (€/kW/Mo)", value=float(jan_data.get('contracted_capacity_price', 0.0)), step=1.0, key=f"jan_cap_pr_{contract_mode}", help="Capacity price charged monthly per kW of your contracted capacity limit.")
             
             # Default Peak Penalty Price is by default the Contracted Capacity Price
             default_peak = float(jan_data.get('peak_penalty_price', jan_cap_price))
-            jan_peak_penalty = jc4.number_input("Peak Penalty Price (€/kW/Mo)", value=default_peak, step=1.0, key=f"jan_peak_pen_{contract_mode}")
+            jan_peak_penalty = jc4.number_input("Peak Penalty Price (€/kW/Mo)", value=default_peak, step=1.0, key=f"jan_peak_pen_{contract_mode}", help="Fee charged per kW of the maximum measured peak load during the month. Defaults to the contracted capacity price if not set.")
             
             jc5, jc6 = st.columns(2)
-            jan_excess = jc5.number_input("Excess Penalty Price (€/kW/Mo)", value=float(jan_data.get('excess_penalty_price', jan_cap_price)), step=1.0, key=f"jan_ex_{contract_mode}")
-            flat_energy_price = jc6.number_input("Energy Price (€/kWh)", value=float(jan_data.get('energy_price_normal', 0.15)), step=0.01, key=f"jan_flat_ee_{contract_mode}")
+            jan_excess = jc5.number_input("Excess Penalty Price (€/kW/Mo)", value=float(jan_data.get('excess_penalty_price', jan_cap_price)), step=1.0, key=f"jan_ex_{contract_mode}", help="Penalty fee charged per kW by which your actual peak load exceeded your contracted capacity limit. Defaults to the contracted capacity price if not set.")
+            flat_energy_price = jc6.number_input("Energy Price (€/kWh)", value=float(jan_data.get('energy_price_normal', 0.15)), step=0.01, key=f"jan_flat_ee_{contract_mode}", help="Flat rate price per kWh of energy consumed.")
             
             alta_pr, alta_start, alta_end = flat_energy_price, 18, 23
             baja_pr, baja_start, baja_end = flat_energy_price, 23, 5
             resto_pr = flat_energy_price
             
         jc7, jc8, jc9 = st.columns(3)
-        jan_vat = jc7.number_input("National VAT (%)", value=float(jan_data.get('tax_pct', 0.0)), step=1.0, key=f"jan_vat_{contract_mode}")
-        jan_local_tax = jc8.number_input("Provincial & Municipal Taxes (%)", value=float(jan_data.get('local_tax_pct', 0.0)), step=1.0, key=f"jan_local_tax_{contract_mode}")
-        jan_subsidy = jc9.number_input("Subsidies / Credits (€/Mo)", value=float(jan_data.get('subsidy_amount', 0.0)), step=10.0, key=f"jan_sub_{contract_mode}")
+        jan_vat = jc7.number_input("National VAT (%)", value=float(jan_data.get('tax_pct', 0.0)), step=1.0, key=f"jan_vat_{contract_mode}", help="National value-added tax (VAT) percentage applied to the net invoice total.")
+        jan_local_tax = jc8.number_input("Provincial & Municipal Taxes (%)", value=float(jan_data.get('local_tax_pct', 0.0)), step=1.0, key=f"jan_local_tax_{contract_mode}", help="Local, municipal, or provincial tax surcharge percentage applied to the net invoice total.")
+        jan_subsidy = jc9.number_input("Subsidies / Credits (€/Mo)", value=float(jan_data.get('subsidy_amount', 0.0)), step=10.0, key=f"jan_sub_{contract_mode}", help="Monthly subsidy amount or credit subtracted from the grid invoice.")
         
         jan_sched = {
             "base_fee": jan_base,
@@ -251,7 +605,7 @@ def render_financial_inputs(working_fin: dict, include_financials: bool = True, 
         monthly_schedule = {"1": jan_sched}
         
         # Checkbox for template cascading
-        use_jan_default = st.checkbox("Use January as default template for all months", value=bool(jan_data.get('use_jan_default', True)), key=f"use_jan_def_{contract_mode}")
+        use_jan_default = st.checkbox("Use January as default template for all months", value=bool(jan_data.get('use_jan_default', True)), key=f"use_jan_def_{contract_mode}", help="Uncheck this to enable monthly varying overrides for February through December.")
         jan_sched["use_jan_default"] = use_jan_default
         
         if not use_jan_default:
@@ -535,12 +889,20 @@ def calculate_year1_baseline_costs(df, fin_params):
             tax_pct = float(m_data.get('tax_pct', 0.0) or 0.0)
             subsidy = float(m_data.get('subsidy_amount', 0.0) or 0.0)
             
-            fixed_costs_y1 += base_fee + (contracted_kw * contract_price) - subsidy
-            peak_costs_y1 += m_peak * peak_penalty_price
+            # Pico-Peak if TOU is enabled, else absolute peak
+            enable_tou = bool(m_data.get('enable_tou', True))
+            pico_peak = m_peak
+            if enable_tou and 'timestamp' in m_df.columns:
+                m_df_copy = m_df.copy()
+                m_df_copy['hour'] = m_df_copy['timestamp'].dt.hour
+                alta_mask = m_df_copy['hour'].apply(lambda h: is_hour_in_range(h, alta_start, alta_end))
+                pico_df = m_df_copy[alta_mask]
+                if len(pico_df) > 0:
+                    pico_peak = pico_df[load_col].max()
             
-            if m_peak > contracted_kw:
-                excess_costs_y1 += (m_peak - contracted_kw) * excess_price
-                
+            m_excess = (m_peak - contracted_kw) * excess_price if m_peak > contracted_kw else 0.0
+            
+            # Energy cost
             alta_price = float(m_data.get('alta', {}).get('price', 0.0) or 0.0)
             alta_start = int(m_data.get('alta', {}).get('start_hour', 18))
             alta_end = int(m_data.get('alta', {}).get('end_hour', 23))
@@ -549,6 +911,7 @@ def calculate_year1_baseline_costs(df, fin_params):
             baja_end = int(m_data.get('baja', {}).get('end_hour', 5))
             resto_price = float(m_data.get('resto', {}).get('price', 0.0) or 0.0)
             
+            m_energy = 0.0
             if 'timestamp' in m_df.columns:
                 m_df_copy = m_df.copy()
                 m_df_copy['hour'] = m_df_copy['timestamp'].dt.hour
@@ -561,11 +924,38 @@ def calculate_year1_baseline_costs(df, fin_params):
                 e_baja = m_df_copy[baja_mask][load_col].sum() / factor
                 e_resto = m_df_copy[resto_mask][load_col].sum() / factor
                 
-                energy_cost_y1 += (e_alta * alta_price) + (e_baja * baja_price) + (e_resto * resto_price)
+                m_energy = (e_alta * alta_price) + (e_baja * baja_price) + (e_resto * resto_price)
             else:
-                total_kwh = m_df[load_col].sum() / factor
-                energy_cost_y1 += total_kwh * resto_price
-                
+                m_energy = (m_df[load_col].sum() / factor) * resto_price
+
+            # Surcharges & Adjustments
+            prov_taxes = m_data.get('provincial_taxes', [])
+            custom_adjustments = m_data.get('custom_adjustments', [])
+            
+            pre_tax_adj = 0.0
+            post_tax_adj = 0.0
+            for adj in custom_adjustments:
+                amt = float(adj.get('Amount (€)', adj.get('amount', 0.0)) or 0.0)
+                is_pre = bool(adj.get('Is Pre-tax', adj.get('is_pre_tax', False)))
+                if is_pre:
+                    pre_tax_adj += amt
+                else:
+                    post_tax_adj += amt
+            
+            total_tax_pct = tax_pct
+            for p_tax in prov_taxes:
+                total_tax_pct += float(p_tax.get('Rate (%)', p_tax.get('rate', 0.0)) or 0.0)
+            tax_factor = 1.0 + (total_tax_pct / 100.0)
+            
+            # Apply tax factors to each component
+            stabilization_credit = float(m_data.get('stabilization_credit', 0.0) or 0.0)
+            post_tax_adj -= stabilization_credit
+            
+            fixed_costs_y1 += (base_fee + (contracted_kw * contract_price) - subsidy + pre_tax_adj) * tax_factor + post_tax_adj
+            peak_costs_y1 += (pico_peak * peak_penalty_price) * tax_factor
+            excess_costs_y1 += m_excess * tax_factor
+            energy_cost_y1 += m_energy * tax_factor
+            
         return peak_costs_y1, energy_cost_y1, fixed_costs_y1, excess_costs_y1
     
     else:
@@ -669,7 +1059,10 @@ def render_baseline_invoice_summary(df: pd.DataFrame, fin_params: dict):
                 else:
                     return (hour >= start) | (hour < end)
                     
-            m_fixed_list, m_cap_list, m_peak_list, m_excess_list, m_energy_list, m_tax_list = [], [], [], [], [], []
+            m_fixed_list, m_cap_list, m_peak_list, m_excess_list, m_energy_list = [], [], [], [], []
+            m_tax_breakdown = {}
+            m_adj_breakdown = {}
+            m_gross_list = []
             
             for m in range(1, 13):
                 m_mask = temp_df['month'] == m
@@ -688,7 +1081,6 @@ def render_baseline_invoice_summary(df: pd.DataFrame, fin_params: dict):
                 peak_penalty_price = float(m_data.get('peak_penalty_price', 0.0) or 0.0)
                 excess_price = float(m_data.get('excess_penalty_price', 0.0) or 0.0)
                 tax_pct = float(m_data.get('tax_pct', 0.0) or 0.0)
-                local_tax_pct = float(m_data.get('local_tax_pct', 0.0) or 0.0)
                 subsidy = float(m_data.get('subsidy_amount', 0.0) or 0.0)
                 
                 alta_price = float(m_data.get('alta', {}).get('price', 0.0) or 0.0)
@@ -701,7 +1093,19 @@ def render_baseline_invoice_summary(df: pd.DataFrame, fin_params: dict):
                 
                 m_fixed = base_fee - subsidy
                 m_capacity = contracted_kw * contract_price
-                m_peak_penalty = m_peak * peak_penalty_price
+                
+                # Pico peak
+                enable_tou = bool(m_data.get('enable_tou', True))
+                pico_peak = m_peak
+                if enable_tou and 'timestamp' in m_df.columns:
+                    m_df_copy = m_df.copy()
+                    m_df_copy['hour'] = m_df_copy['timestamp'].dt.hour
+                    alta_mask = m_df_copy['hour'].apply(lambda h: is_hour_in_range(h, alta_start, alta_end))
+                    pico_df = m_df_copy[alta_mask]
+                    if len(pico_df) > 0:
+                        pico_peak = pico_df[load_col].max()
+                        
+                m_peak_penalty = pico_peak * peak_penalty_price
                 m_excess = (m_peak - contracted_kw) * excess_price if m_peak > contracted_kw else 0.0
                 
                 m_energy = 0.0
@@ -719,14 +1123,59 @@ def render_baseline_invoice_summary(df: pd.DataFrame, fin_params: dict):
                     m_energy = (m_df[load_col].sum() / factor) * resto_price
                     
                 net_m = m_fixed + m_capacity + m_peak_penalty + m_excess + m_energy
-                tax_m = net_m * ((tax_pct + local_tax_pct) / 100.0)
                 
+                # Accumulate net components
                 m_fixed_list.append(m_fixed)
                 m_cap_list.append(m_capacity)
                 m_peak_list.append(m_peak_penalty)
                 m_excess_list.append(m_excess)
                 m_energy_list.append(m_energy)
-                m_tax_list.append(tax_m)
+                
+                # Surcharges & Adjustments
+                prov_taxes = m_data.get('provincial_taxes', [])
+                custom_adjustments = m_data.get('custom_adjustments', [])
+                
+                pre_tax_adj = 0.0
+                post_tax_adj = 0.0
+                for adj in custom_adjustments:
+                    name = adj.get('Charge Name', adj.get('name', 'Adjustment'))
+                    amt = float(adj.get('Amount (€)', adj.get('amount', 0.0)) or 0.0)
+                    is_pre = bool(adj.get('Is Pre-tax', adj.get('is_pre_tax', False)))
+                    if is_pre:
+                        pre_tax_adj += amt
+                    else:
+                        post_tax_adj += amt
+                    
+                    if name not in m_adj_breakdown:
+                        m_adj_breakdown[name] = []
+                    m_adj_breakdown[name].append(amt)
+                
+                net_with_pre_tax = net_m + pre_tax_adj
+                
+                # National VAT
+                vat_val = net_with_pre_tax * (tax_pct / 100.0)
+                if "National VAT" not in m_tax_breakdown:
+                    m_tax_breakdown["National VAT"] = []
+                m_tax_breakdown["National VAT"].append(vat_val)
+                
+                total_tax_m = vat_val
+                
+                # Provincial taxes
+                for p_tax in prov_taxes:
+                    name = p_tax.get('Tax Name', p_tax.get('name', 'Provincial Tax'))
+                    rate = float(p_tax.get('Rate (%)', p_tax.get('rate', 0.0)) or 0.0)
+                    tax_val = net_with_pre_tax * (rate / 100.0)
+                    if name not in m_tax_breakdown:
+                        m_tax_breakdown[name] = []
+                    m_tax_breakdown[name].append(tax_val)
+                    total_tax_m += tax_val
+                    
+                gross_m = net_with_pre_tax + total_tax_m + post_tax_adj
+                
+                # Legacy stabilization credit fallback
+                stabilization_credit = float(m_data.get('stabilization_credit', 0.0) or 0.0)
+                gross_m = max(0.0, gross_m - stabilization_credit)
+                m_gross_list.append(gross_m)
                 
             monthly_fixed = sum(m_fixed_list) / len(m_fixed_list)
             monthly_capacity = sum(m_cap_list) / len(m_cap_list)
@@ -735,9 +1184,17 @@ def render_baseline_invoice_summary(df: pd.DataFrame, fin_params: dict):
             monthly_energy = sum(m_energy_list) / len(m_energy_list)
             
             net_subtotal = monthly_fixed + monthly_capacity + monthly_peak_penalty + monthly_energy + monthly_excess_penalty
-            total_tax = sum(m_tax_list) / len(m_tax_list)
-            gross_total = net_subtotal + total_tax
+            gross_total = sum(m_gross_list) / len(m_gross_list)
             
+            # Average breakdowns
+            avg_taxes = {}
+            for name, val_list in m_tax_breakdown.items():
+                avg_taxes[name] = sum(val_list) / len(val_list)
+                
+            avg_adjs = {}
+            for name, val_list in m_adj_breakdown.items():
+                avg_adjs[name] = sum(val_list) / len(val_list)
+                
             jan_data = monthly_schedule.get('1', {}) or monthly_schedule.get(1, {})
             contracted_kw = float(jan_data.get('contracted_capacity_kw', 430.0))
             
@@ -753,12 +1210,31 @@ def render_baseline_invoice_summary(df: pd.DataFrame, fin_params: dict):
                 
             st.markdown(f"**Net Electrical Subtotal: `€ {net_subtotal:,.2f} / Mo`**")
             st.divider()
-            st.markdown("#### 2. Taxes & Duties (12-Month Average)")
-            st.write(f"• Average Taxes & Local Surcharges: `€ {total_tax:,.2f} / Mo`")
-            st.markdown(f"**Total Taxes Subtotal: `€ {total_tax:,.2f} / Mo`**")
+            
+            st.markdown("#### 2. Taxes, Duties & Adjustments (12-Month Average)")
+            # Render taxes breakdown
+            tax_sum_avg = 0.0
+            for name, val in avg_taxes.items():
+                st.write(f"• {name}: `€ {val:,.2f} / Mo`")
+                tax_sum_avg += val
+                
+            # Render adjustments breakdown
+            adj_sum_avg = 0.0
+            for name, val in avg_adjs.items():
+                sign = "-" if val < 0 else "+"
+                st.write(f"• {name}: `{sign} € {abs(val):,.2f} / Mo`")
+                adj_sum_avg += val
+                
+            # Legacy stabilization credit
+            legacy_credit = float(jan_data.get('stabilization_credit', 0.0) or 0.0)
+            if legacy_credit > 0:
+                st.write(f"• Grid Stabilization Credit (Legacy): `- € {legacy_credit:,.2f} / Mo`")
+                adj_sum_avg -= legacy_credit
+                
+            st.markdown(f"**Total Surcharges & Adjustments: `€ {tax_sum_avg + adj_sum_avg:,.2f} / Mo`**")
             st.divider()
             
-            st.metric(label="Estimated Average Monthly Bill (Gross)", value=f"€ {gross_total:,.2f} / Mo", help="Average of net electrical charges plus national and local taxes over 12 months.")
+            st.metric(label="Estimated Average Monthly Bill (Gross)", value=f"€ {gross_total:,.2f} / Mo", help="Average of net electrical charges plus national/local taxes and custom adjustments.")
             return
         
         # Calculate annual values

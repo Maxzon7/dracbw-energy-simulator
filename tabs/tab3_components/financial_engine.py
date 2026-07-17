@@ -468,7 +468,18 @@ def calculate_annual_grid_bill_with_pillars(df, fin_params):
             m_fixed_cap = base_fee + (contracted_kw * contract_price)
             
             # 2. Peak penalty cost (Consumo de Potencia)
-            m_peak_penalty = m_peak * peak_penalty_price
+            # Calculated based on Pico-Peak if TOU is enabled, else absolute peak
+            enable_tou = bool(m_data.get('enable_tou', True))
+            pico_peak = m_peak
+            if enable_tou and 'timestamp' in m_df.columns:
+                m_df_copy = m_df.copy()
+                m_df_copy['hour'] = m_df_copy['timestamp'].dt.hour
+                alta_mask = m_df_copy['hour'].apply(lambda h: is_hour_in_range(h, alta_start, alta_end))
+                pico_df = m_df_copy[alta_mask]
+                if len(pico_df) > 0:
+                    pico_peak = pico_df[load_col].max()
+                    
+            m_peak_penalty = pico_peak * peak_penalty_price
             
             # 3. Excess penalty cost (Exceso de Potencia)
             m_excess = 0.0
@@ -495,7 +506,38 @@ def calculate_annual_grid_bill_with_pillars(df, fin_params):
                 m_energy_cost = total_kwh * resto_price
                 
             net_monthly = m_fixed_cap + m_peak_penalty + m_excess + m_energy_cost - subsidy
-            gross_monthly = net_monthly * (1.0 + (tax_pct + local_tax_pct) / 100.0)
+            
+            # Taxes & custom adjustments
+            provincial_taxes = m_data.get('provincial_taxes', [])
+            custom_adjustments = m_data.get('custom_adjustments', [])
+            
+            pre_tax_adj = 0.0
+            post_tax_adj = 0.0
+            for adj in custom_adjustments:
+                amt = float(adj.get('Amount (€)', adj.get('amount', 0.0)) or 0.0)
+                is_pre = bool(adj.get('Is Pre-tax', adj.get('is_pre_tax', False)))
+                if is_pre:
+                    pre_tax_adj += amt
+                else:
+                    post_tax_adj += amt
+            
+            net_with_pre_tax = net_monthly + pre_tax_adj
+            
+            # Calculate VAT and all Provincial Taxes
+            tax_sum = net_with_pre_tax * (tax_pct / 100.0)
+            for p_tax in provincial_taxes:
+                rate = float(p_tax.get('Rate (%)', p_tax.get('rate', 0.0)) or 0.0)
+                tax_sum += net_with_pre_tax * (rate / 100.0)
+            
+            # Calculate gross
+            gross_monthly = net_with_pre_tax + tax_sum
+            
+            # Apply post-tax adjustments
+            gross_monthly = gross_monthly + post_tax_adj
+            
+            # Legacy stabilization_credit fallback
+            stabilization_credit = float(m_data.get('stabilization_credit', 0.0) or 0.0)
+            gross_monthly = max(0.0, gross_monthly - stabilization_credit)
             
             total_annual_gross += gross_monthly
             
